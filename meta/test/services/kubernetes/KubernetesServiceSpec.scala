@@ -2480,7 +2480,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
               ),
               volumes = List(),
               affinity = None,
-              dnsPolicy = skuber.DNSPolicy.ClusterFirst
+              dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+              restartPolicy = skuber.RestartPolicy.Never
             ))
           ))
         ))
@@ -2602,7 +2603,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
                 ))))
               ),
               affinity = None,
-              dnsPolicy = skuber.DNSPolicy.ClusterFirst
+              dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+              restartPolicy = skuber.RestartPolicy.Never
             ))
           ))
         ))
@@ -2707,7 +2709,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
                   skuber.Volume.PersistentVolumeClaimRef("pvc-name", true))
               ),
               affinity = None,
-              dnsPolicy = skuber.DNSPolicy.ClusterFirst
+              dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+              restartPolicy = skuber.RestartPolicy.Never
             ))
           ))
         ))

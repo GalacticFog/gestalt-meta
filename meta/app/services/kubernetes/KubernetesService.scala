@@ -1038,6 +1038,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      GenLens[skuber.Pod.Spec](_.volumes) composeTraversal Traversal.fromTraverse[List,skuber.Volume] composeLens
      GenLens[skuber.Volume](_.source) composePrism GenPrism[skuber.Volume.Source,skuber.Volume.PersistentVolumeClaimRef]
 
+    val podTemplateRestartPolicy = GenLens[skuber.Pod.Template.Spec](_.spec) composePrism some composeLens
+     GenLens[skuber.Pod.Spec](_.restartPolicy)
+
     val eitherJobSpec: EitherError[skuber.batch.Job] = for(
       specProperties0 <- ResourceSerde.deserialize[ContainerSpec,Error.UnprocessableEntity](metaResource);
       specProperties = specProperties0.copy(name=metaResource.name);    // this should be done somewhere else
@@ -1048,7 +1051,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       }else {
         Right(())
       };
-      podTemplate <- mks.mkPodTemplate(providerProperties, specProperties);
+      podTemplateOriginal <- mks.mkPodTemplate(providerProperties, specProperties);
+      // restart policy can be OnFailure or Never for Jobs. Using Never here because it makes most sense for laser use case
+      // deployments have restart policy Always at all times
+      podTemplateWithRestartPolicy = podTemplateRestartPolicy.set(skuber.RestartPolicy.Never)(podTemplateOriginal);
 
       allSecretsInEnv = (ResourceFactory.findChildrenOfType(metaResource.orgId, context.environmentId, ResourceIds.Secret) map { secret =>
         secret.id -> secret
@@ -1080,7 +1086,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         }
       };
       podTemplateWithSecrets = (podTemplateEnvSecretsOptics.modify(setSecretName) compose
-       podTemplateVolumeSecretsOptics.modify(setSecretName))(podTemplate);
+       podTemplateVolumeSecretsOptics.modify(setSecretName))(podTemplateWithRestartPolicy);
 
       mountedExistingVolumeIds = specProperties.volumes collect {
         case ContainerSpec.ExistingVolumeMountSpec(_, volumeId) => volumeId
