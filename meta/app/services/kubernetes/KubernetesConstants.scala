@@ -18,8 +18,8 @@ object KubernetesConstants {
   val REQ_TYPE_LIMIT = "limit"
   val REQ_TYPE_REQUEST = "request"
 
-  val DEFAULT_CPU_REQ = REQ_TYPE_REQUEST
-  val DEFAULT_MEM_REQ = Seq(REQ_TYPE_LIMIT,REQ_TYPE_REQUEST).mkString(",")
+  val DEFAULT_CPU_REQ = Seq(REQ_TYPE_REQUEST)
+  val DEFAULT_MEM_REQ = Seq(REQ_TYPE_LIMIT, REQ_TYPE_REQUEST)
 
   val HOST_VOLUME_WHITELIST = "host_volume_whitelist"
   val STORAGE_CLASSES = "storage_classes"

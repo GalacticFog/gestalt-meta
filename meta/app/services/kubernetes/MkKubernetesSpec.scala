@@ -559,8 +559,8 @@ trait MkKubernetesSpec {
   }
 
   def mkKubernetesContainer(spec: ContainerSpec, provider: GestaltResourceInstance): skuber.Container = {
-    val cpuRequest = ContainerService.getProviderProperty[String](provider, CPU_REQ_TYPE).getOrElse(DEFAULT_CPU_REQ).split(",")
-    val memRequest = ContainerService.getProviderProperty[String](provider, MEM_REQ_TYPE).getOrElse(DEFAULT_MEM_REQ).split(",")
+    val cpuRequest = ContainerService.getProviderProperty[Seq[String]](provider, CPU_REQ_TYPE).getOrElse(DEFAULT_CPU_REQ)
+    val memRequest = ContainerService.getProviderProperty[Seq[String]](provider, MEM_REQ_TYPE).getOrElse(DEFAULT_MEM_REQ)
 
     val cpu: Resource.ResourceList = Map(skuber.Resource.cpu    -> f"${spec.cpus}%1.3f")
     val mem: Resource.ResourceList = Map(skuber.Resource.memory -> f"${spec.memory}%1.3fM")
