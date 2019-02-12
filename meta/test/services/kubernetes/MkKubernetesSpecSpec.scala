@@ -23,13 +23,13 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
     
   lazy val mks = new MkKubernetesSpec { }
 
-  def deserializeProperties(provider: GestaltResourceInstance, resource: GestaltResourceInstance): EitherError[(KubernetesProviderProperties.Properties,ContainerSpec)] = {
+  def deserializeProperties[A: Reads](provider: GestaltResourceInstance, resource: GestaltResourceInstance): EitherError[(KubernetesProviderProperties.Properties,A)] = {
     import cats.syntax.either._
 
     import KubernetesProviderProperties.Implicits._
 
     for(
-      specProperties <- ResourceSerde.deserialize[ContainerSpec,Error.UnprocessableEntity](resource);
+      specProperties <- ResourceSerde.deserialize[A,Error.UnprocessableEntity](resource);
       providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](provider)
     ) yield (providerProperties, specProperties)
   }
@@ -53,6 +53,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
         properties = Some(Map(
+          "name" -> "test-volume",
           "type" -> "host_path",
           "size" -> "1000",
           "access_mode" -> "ReadWriteOnce",
@@ -62,12 +63,13 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
           "config" -> Json.toJson(VolumeSpec.HostPathVolume("/supported-path/sub-path")).toString
         ))
       )
-      val Right(res) = mks.mkPVCandPV(testK8SProvider, volume)
+      val Right((pp, sp)) = deserializeProperties[VolumeSpec](testK8SProvider, volume)
+      val Right(res) = mks.mkPVCandPV(pp, sp)
       val (pvc, pv) = res
       pv === Some(skuber.PersistentVolume(
         metadata = skuber.ObjectMeta(
-          name = s"test-vol-${volume.id}",
-          labels = Map("meta/volume" -> s"${volume.id}")
+          name = s"test-vol",
+          labels = Map()
         ),
         spec = Some(skuber.PersistentVolume.Spec(
           capacity = Map(skuber.Resource.storage -> skuber.Resource.Quantity(s"1000Mi")),
@@ -83,7 +85,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         metadata = skuber.ObjectMeta(
           name = s"test-volume",
           namespace = "__SET_ME__",
-          labels = Map("meta/volume" -> s"${volume.id}")
+          labels = Map()
         ),
         spec = Some(skuber.PersistentVolumeClaim.Spec(
           resources = Some(skuber.Resource.Requirements(
@@ -103,6 +105,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
         properties = Some(Map(
+          "name" -> "test-volume",
           "type" -> "host_path",
           "size" -> "1000",
           "access_mode" -> "ReadWriteOnce",
@@ -112,7 +115,8 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
           "config" -> Json.toJson(VolumeSpec.HostPathVolume("/test")).toString
         ))
       )
-      val res = mks.mkPVCandPV(testK8SProvider, volume)
+      val Right((pp, sp)) = deserializeProperties[VolumeSpec](testK8SProvider, volume)
+      val res = mks.mkPVCandPV(pp, sp)
       res === Left(Error.UnprocessableEntity("host_path '/test' is not in provider's white-list"))
     }
 
@@ -122,6 +126,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
         properties = Some(Map(
+          "name" -> "test-volume",
           "type" -> "persistent",
           "size" -> "1000",
           "access_mode" -> "ReadWriteOnce",
@@ -131,7 +136,8 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
           "config" -> "{}"
         ))
       )
-      val res = mks.mkPVCandPV(testK8SProvider, volume)
+      val Right((pp, sp)) = deserializeProperties[VolumeSpec](testK8SProvider, volume)
+      val res = mks.mkPVCandPV(pp, sp)
       res === Left(Error.BadRequest("Kubernetes providers only support volumes of type 'external', 'dynamic' and 'host_path'"))
     }
 
@@ -141,6 +147,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
         properties = Some(Map(
+          "name" -> "test-volume",
           "type" -> "external",
           "size" -> "1000",
           "access_mode" -> "ReadWriteOnce",
@@ -150,12 +157,13 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
           "config" -> Json.toJson(VolumeSpec.ExternalVolume(Json.obj())).toString
         ))
       )
-      val Right(res) = mks.mkPVCandPV(testK8SProvider, volume)
+      val Right((pp, sp)) = deserializeProperties[VolumeSpec](testK8SProvider, volume)
+      val Right(res) = mks.mkPVCandPV(pp, sp)
       val (pvc, pv) = res
       pv === Some(skuber.PersistentVolume(
         metadata = skuber.ObjectMeta(
-          name = s"test-vol-${volume.id}",
-          labels = Map("meta/volume" -> s"${volume.id}")
+          name = s"test-vol",
+          labels = Map()
         ),
         spec = Some(skuber.PersistentVolume.Spec(
           capacity = Map(skuber.Resource.storage -> skuber.Resource.Quantity(s"1000Mi")),
@@ -171,7 +179,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         metadata = skuber.ObjectMeta(
           name = s"test-volume",
           namespace = "__SET_ME__",
-          labels = Map("meta/volume" -> s"${volume.id}")
+          labels = Map()
         ),
         spec = Some(skuber.PersistentVolumeClaim.Spec(
           resources = Some(skuber.Resource.Requirements(
@@ -191,6 +199,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
         properties = Some(Map(
+          "name" -> "test-volume",
           "type" -> "dynamic",
           "size" -> "1000",
           "access_mode" -> "ReadWriteOnce",
@@ -200,14 +209,15 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
           "config" -> Json.toJson(VolumeSpec.DynamicVolume("storage-class-1")).toString
         ))
       )
-      val Right(res) = mks.mkPVCandPV(testK8SProvider, volume)
+      val Right((pp, sp)) = deserializeProperties[VolumeSpec](testK8SProvider, volume)
+      val Right(res) = mks.mkPVCandPV(pp, sp)
       val (pvc, pv) = res
       pv === None
       pvc === skuber.PersistentVolumeClaim(
         metadata = skuber.ObjectMeta(
           name = s"test-volume",
           namespace = "__SET_ME__",
-          labels = Map("meta/volume" -> s"${volume.id}")
+          labels = Map()
         ),
         spec = Some(skuber.PersistentVolumeClaim.Spec(
           resources = Some(skuber.Resource.Requirements(
@@ -227,6 +237,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
         properties = Some(Map(
+          "name" -> "test-volume",
           "type" -> "dynamic",
           "size" -> "1000",
           "access_mode" -> "ReadWriteOnce",
@@ -236,7 +247,8 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
           "config" -> Json.toJson(VolumeSpec.DynamicVolume("storage-class-2")).toString
         ))
       )
-      val res = mks.mkPVCandPV(testK8SProvider, volume)
+      val Right((pp, sp)) = deserializeProperties[VolumeSpec](testK8SProvider, volume)
+      val res = mks.mkPVCandPV(pp, sp)
       res === Left(Error.UnprocessableEntity("storage_class 'storage-class-2' is not in provider's white-list"))
     }
   }
@@ -259,7 +271,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
       import cats.syntax.either._
 
       for(
-        ppsp <- deserializeProperties(provider, resource);
+        ppsp <- deserializeProperties[ContainerSpec](provider, resource);
         r <- mks.mkPodTemplate(ppsp._1, ppsp._2)
       ) yield r
     }
@@ -1256,7 +1268,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
           "secrets" -> "[]"
         ))
       )
-      val (pp, sp) = deserializeProperties(testK8SProvider, container).right.get
+      val (pp, sp) = deserializeProperties[ContainerSpec](testK8SProvider, container).right.get
 
       mks.mkClusterIpServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
         ports = List(
@@ -1329,7 +1341,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
           "secrets" -> "[]"
         ))
       )
-      val (pp, sp) = deserializeProperties(testK8SProvider, container).right.get
+      val (pp, sp) = deserializeProperties[ContainerSpec](testK8SProvider, container).right.get
 
       mks.mkClusterIpServiceSpec(pp, sp) === Right(None)
       mks.mkNodePortServiceSpec(pp, sp) === Right(None)

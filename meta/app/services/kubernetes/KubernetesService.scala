@@ -895,11 +895,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-
+    
+    import KubernetesProviderProperties.Implicits._
     import monocle.std.option._
 
     val pvcLabelsOptics = GenLens[skuber.PersistentVolumeClaim](_.metadata.labels)
     val pvLabelsOptics = GenLens[skuber.PersistentVolume](_.metadata.labels)
+    val pvNameOptics = GenLens[skuber.PersistentVolume](_.metadata.name)
 
     val pvClaimRefNamespaceOptics = GenLens[skuber.PersistentVolume](_.spec) composePrism some composeLens
      GenLens[skuber.PersistentVolume.Spec](_.claimRef) composePrism some composeLens
@@ -909,9 +911,16 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      GenLens[skuber.PersistentVolume.Spec](_.source)
 
     for(
-      pvcpvSpecs <- mks.mkPVCandPV(context.provider, metaResource).liftTo[Future];
-      pvcSpec = pvcLabelsOptics.modify(_ ++ mks.mkLabels(context))(pvcpvSpecs._1);
-      pvSpecOpt = (some composeLens pvLabelsOptics).modify(_ ++ mks.mkLabels(context))(pvcpvSpecs._2);
+      spec0 <- ResourceSerde.deserialize[VolumeSpec,Error.UnprocessableEntity](metaResource).liftTo[Future];
+      spec = spec0.copy(name=metaResource.name);
+      providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](context.provider).liftTo[Future];
+      pvcpvSpecs <- mks.mkPVCandPV(providerProperties, spec).liftTo[Future];
+      labels = Map(
+        META_VOLUME_KEY -> s"${metaResource.id}"
+      ) ++ mks.mkLabels(context);
+      pvcSpec = pvcLabelsOptics.modify(_ ++ labels)(pvcpvSpecs._1);
+      pvSpecOpt = ((some composeLens pvLabelsOptics).modify(_ ++ labels) compose
+       (some composeLens pvNameOptics).modify(_ ++ s"-${metaResource.id}"))(pvcpvSpecs._2);
       namespace <- cleanly(context.provider, DefaultNamespace) { kube =>
         getNamespace(kube, context, create = true)
       };

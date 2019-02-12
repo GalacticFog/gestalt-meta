@@ -34,27 +34,23 @@ Transforms meta entities into kubernetes entities
 trait MkKubernetesSpec {
   import KubernetesConstants._
 
-  import KubernetesProviderProperties.Implicits._
+  def mkPVCandPV(providerProperties: KubernetesProviderProperties.Properties, spec: VolumeSpec): EitherError[(PersistentVolumeClaim, Option[PersistentVolume])] = {
 
-  def mkPVCandPV(provider: GestaltResourceInstance, resource: GestaltResourceInstance): EitherError[(PersistentVolumeClaim, Option[PersistentVolume])] = {
-
-    def isAllowedHostPath(providerProperties: KubernetesProviderProperties.Properties, hostPath: String): Boolean = {
+    def isAllowedHostPath(hostPath: String): Boolean = {
       // val allowedHostPaths = ContainerService.getProviderProperty[Seq[String]](provider, HOST_VOLUME_WHITELIST).getOrElse(Seq.empty)
       val hpParts = hostPath.stripSuffix("/").stripPrefix("/").split("/").scan("")(_ + "/" + _)
       hpParts.exists(part => providerProperties.config.host_volume_whitelist.map(_.stripSuffix("/")).contains(part))
     }
 
-    def isConfiguredStorageClass(providerProperties: KubernetesProviderProperties.Properties, storageClass: String): Boolean = {
+    def isConfiguredStorageClass(storageClass: String): Boolean = {
       // val configuredStorageClasses = ContainerService.getProviderProperty[Seq[String]](provider, STORAGE_CLASSES).getOrElse(Seq.empty)
       providerProperties.config.storage_classes.contains(storageClass)
     }
 
     for(
-      spec <- ResourceSerde.deserialize[VolumeSpec,Error.UnprocessableEntity](resource);
-      providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](provider);
       config <- eitherFromJsResult(spec.parseConfig);
       props <- config match {
-        case VolumeSpec.HostPathVolume(hostPath) if isAllowedHostPath(providerProperties, hostPath) => {
+        case VolumeSpec.HostPathVolume(hostPath) if isAllowedHostPath(hostPath) => {
           Right((Some(skuber.Volume.HostPath(hostPath)), None))
         }
         case VolumeSpec.HostPathVolume(hostPath) => Left(Error.UnprocessableEntity(s"host_path '$hostPath' is not in provider's white-list"))
@@ -62,7 +58,7 @@ trait MkKubernetesSpec {
         case VolumeSpec.ExternalVolume(config) => {
           Right((Some(skuber.Volume.GenericVolumeSource(config.toString)), None))
         }
-        case VolumeSpec.DynamicVolume(storageClass) if isConfiguredStorageClass(providerProperties, storageClass) => {
+        case VolumeSpec.DynamicVolume(storageClass) if isConfiguredStorageClass(storageClass) => {
           Right((None, Some(storageClass)))
         }
         case VolumeSpec.DynamicVolume(storageClass) => Left(Error.UnprocessableEntity(s"storage_class '$storageClass' is not in provider's white-list"))
@@ -72,11 +68,8 @@ trait MkKubernetesSpec {
       val pvOpt = sourceOpt map { source =>
         PersistentVolume(
           metadata = ObjectMeta(
-            name = s"${resource.name.take(8)}-${resource.id}",
-            namespace = "",
-            labels = Map(
-              META_VOLUME_KEY -> s"${resource.id}"
-            )
+            name = s"${spec.name.take(8)}",
+            namespace = ""
           ),
           spec = Some(PersistentVolume.Spec(
             capacity = Map(Resource.storage -> Resource.Quantity(s"${spec.size}Mi")),
@@ -84,18 +77,15 @@ trait MkKubernetesSpec {
             accessModes = List(spec.access_mode),
             claimRef = Some(skuber.ObjectReference(
               namespace = "__SET_ME__",
-              name = resource.name
+              name = spec.name
             ))
           ))
         )
       }
       val pvc = PersistentVolumeClaim(
         metadata = ObjectMeta(
-          name = resource.name,
-          namespace = "__SET_ME__",
-          labels = Map(
-            META_VOLUME_KEY -> s"${resource.id}"
-          )
+          name = spec.name,
+          namespace = "__SET_ME__"
         ),
         spec = Some(PersistentVolumeClaim.Spec(
           accessModes = List(spec.access_mode),
