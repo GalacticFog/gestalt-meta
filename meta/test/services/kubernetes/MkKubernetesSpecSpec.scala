@@ -13,7 +13,7 @@ import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.util.Error
 
 class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach {
-  override def beforeAll(): Unit = pristineDatabase()
+  override def beforeAll(): Unit = () //pristineDatabase()
 
   override def before: Unit = scalikejdbc.config.DBs.setupAll()
 
@@ -324,7 +324,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -418,7 +425,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -528,7 +542,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -597,7 +618,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -665,7 +693,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -726,7 +761,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -801,7 +843,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -890,7 +939,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -947,7 +1003,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -1004,7 +1067,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -1093,7 +1163,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
               ))))
             ),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )
@@ -1131,7 +1208,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         ))
       )
       val res = mkPodTemplate(testK8SProvider, container)
-      res === Left(Error.UnprocessableEntity("secrets must have unique paths"))
+      res === Left(Error.BadRequest("secrets must have unique paths"))
     }
 
     "create pod template with volumes" in {
@@ -1187,7 +1264,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
                 skuber.Volume.PersistentVolumeClaimRef("!00000000-0000-0000-0000-000000000000"))
             ),
             affinity = None,
-            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
           ))
         )
       )

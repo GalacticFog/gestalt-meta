@@ -9,7 +9,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.test.ResourceScope
 
 class KubernetesProviderPropertiesSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach {
-  override def beforeAll(): Unit = pristineDatabase()
+  override def beforeAll(): Unit = ()// pristineDatabase()
 
   override def before: Unit = scalikejdbc.config.DBs.setupAll()
 

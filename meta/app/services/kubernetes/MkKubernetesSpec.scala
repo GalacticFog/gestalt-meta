@@ -221,7 +221,7 @@ trait MkKubernetesSpec {
       };
       (storageVolumes, storageMounts) = volumesAndMounts.unzip;
       _ <- if(specProperties.secrets.nonEmpty && specProperties.secrets.map(_.path).distinct.size != specProperties.secrets.size) {
-        Left(Error.UnprocessableEntity("secrets must have unique paths"))
+        Left(Error.BadRequest("secrets must have unique paths"))
       }else {
         Right(())
       };
@@ -348,11 +348,20 @@ trait MkKubernetesSpec {
         volumeMounts = (storageMounts ++ secDirMounts ++ secretFileMounts).toList
       )
 
+      def DEFAULT_SECRET_NAME(idx: Int): String = "imagepullsecret-%d".format(idx)
+
       val pod = Pod.Spec(
         containers = List(container),
         affinity = providerProperties.affinity,
         volumes = (storageVolumes ++ secretDirVolumes ++ secretFileVolumes).toList,
-        dnsPolicy = skuber.DNSPolicy.ClusterFirst
+        dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+        imagePullSecrets = List(
+          LocalObjectReference(DEFAULT_SECRET_NAME(1)),
+          LocalObjectReference(DEFAULT_SECRET_NAME(2)),
+          LocalObjectReference(DEFAULT_SECRET_NAME(3)),
+          LocalObjectReference(DEFAULT_SECRET_NAME(4)),
+          LocalObjectReference(DEFAULT_SECRET_NAME(5))
+        )
       )
       Pod.Template.Spec(spec = Some(pod))
     }
@@ -419,6 +428,24 @@ trait MkKubernetesSpec {
         None
       }
     }
+  }
+
+  def mkIngressSpec2(providerProperties: KubernetesProviderProperties.Properties, specProperties: ContainerSpec): EitherError[Option[Ingress.Spec]] = {
+    val ingressRules = for(
+      pm <- specProperties.port_mappings.toList if pm.expose_endpoint == Some(true);
+      vhost <- pm.virtual_hosts.getOrElse(Seq.empty);
+      port <- pm.lb_port.orElse(pm.container_port)
+    ) yield {
+      skuber.ext.Ingress.Rule(vhost, skuber.ext.Ingress.HttpRule(
+        List(skuber.ext.Ingress.Path("", skuber.ext.Ingress.Backend(specProperties.name, port)))
+      ))
+    }
+
+    Right(if(ingressRules.size > 0) {
+      Some(skuber.ext.Ingress.Spec(rules = ingressRules))
+    }else {
+      None
+    })
   }
 
   // def mkIngressSpec(providerProperties: KubernetesProviderProperties.Properties, specProperties: ContainerSpec): EitherError[Option[Ingress.Spec]] = {
