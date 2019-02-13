@@ -62,9 +62,9 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
   sequential
 
-  def mockSvc(resourceVersion: String = "", clusterIP: String = "", name: String = "test-container"): skuber.Service = {
+  def mockSvc(resourceVersion: String = "", clusterIP: String = "", name: String = "test-container", namespace: String = ""): skuber.Service = {
     skuber.Service(
-      name = name
+      metadata = skuber.ObjectMeta(name = name, namespace = namespace)
     ).withClusterIP(clusterIP)
       .withResourceVersion(resourceVersion)
   }
@@ -2168,14 +2168,14 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
       testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
       testSetup.client.create(argThat((_:Service).name == metaContainer.name))(any,meq(Service.svcDef),any) returns Future.successful({
-        mockSvc().setPorts(List(
+        mockSvc(namespace = s"${testEnv.id}").setPorts(List(
           skuber.Service.Port("web",    skuber.Protocol.TCP, 80,  Some(Left(80)),     0),
           skuber.Service.Port("api",    skuber.Protocol.TCP, 81,  Some(Left(81)),     0),
           skuber.Service.Port("secure", skuber.Protocol.TCP, 443, Some(Left(443)), 8443)
         )).withType(Service.Type.ClusterIP)
       })
       testSetup.client.create(argThat((_:Service).name == metaContainer.name + "-ext"))(any,meq(Service.svcDef),any) returns Future.successful({
-        mockSvc().setPorts(List(
+        mockSvc(namespace = s"${testEnv.id}").setPorts(List(
           skuber.Service.Port("api",    skuber.Protocol.TCP,  81, Some(Left(81)),  assignedNodePort81),
           skuber.Service.Port("secure", skuber.Protocol.TCP, 443, Some(Left(443)),               8443)
         )).withType(Service.Type.NodePort)
@@ -2514,7 +2514,14 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
               volumes = List(),
               affinity = None,
               dnsPolicy = skuber.DNSPolicy.ClusterFirst,
-              restartPolicy = skuber.RestartPolicy.Never
+              restartPolicy = skuber.RestartPolicy.Never,
+              imagePullSecrets = List(
+                skuber.LocalObjectReference("imagepullsecret-1"),
+                skuber.LocalObjectReference("imagepullsecret-2"),
+                skuber.LocalObjectReference("imagepullsecret-3"),
+                skuber.LocalObjectReference("imagepullsecret-4"),
+                skuber.LocalObjectReference("imagepullsecret-5")
+              )
             ))
           ))
         ))
@@ -2637,7 +2644,14 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
               ),
               affinity = None,
               dnsPolicy = skuber.DNSPolicy.ClusterFirst,
-              restartPolicy = skuber.RestartPolicy.Never
+              restartPolicy = skuber.RestartPolicy.Never,
+              imagePullSecrets = List(
+                skuber.LocalObjectReference("imagepullsecret-1"),
+                skuber.LocalObjectReference("imagepullsecret-2"),
+                skuber.LocalObjectReference("imagepullsecret-3"),
+                skuber.LocalObjectReference("imagepullsecret-4"),
+                skuber.LocalObjectReference("imagepullsecret-5")
+              )
             ))
           ))
         ))
@@ -2743,7 +2757,14 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
               ),
               affinity = None,
               dnsPolicy = skuber.DNSPolicy.ClusterFirst,
-              restartPolicy = skuber.RestartPolicy.Never
+              restartPolicy = skuber.RestartPolicy.Never,
+              imagePullSecrets = List(
+                skuber.LocalObjectReference("imagepullsecret-1"),
+                skuber.LocalObjectReference("imagepullsecret-2"),
+                skuber.LocalObjectReference("imagepullsecret-3"),
+                skuber.LocalObjectReference("imagepullsecret-4"),
+                skuber.LocalObjectReference("imagepullsecret-5")
+              )
             ))
           ))
         ))
@@ -3589,7 +3610,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           "network" -> ""
         ))
       )
-      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      // testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
       testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val affinity = affinityCfg.as[skuber.Pod.Affinity]

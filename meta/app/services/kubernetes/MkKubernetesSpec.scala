@@ -352,7 +352,7 @@ trait MkKubernetesSpec {
 
       val pod = Pod.Spec(
         containers = List(container),
-        affinity = providerProperties.affinity,
+        affinity = providerProperties.config.affinity,
         volumes = (storageVolumes ++ secretDirVolumes ++ secretFileVolumes).toList,
         dnsPolicy = skuber.DNSPolicy.ClusterFirst,
         imagePullSecrets = List(
