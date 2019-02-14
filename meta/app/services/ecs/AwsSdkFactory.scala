@@ -1,4 +1,4 @@
-package services
+package services.ecs
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException

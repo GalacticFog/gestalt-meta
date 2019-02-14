@@ -1,4 +1,4 @@
-package services
+package services.ecs
 
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
@@ -17,6 +17,7 @@ import com.google.inject.Inject
 import play.api.Logger
 import play.api.libs.json.Json
 import com.amazonaws.services.ecs.model.{ServiceNotActiveException,ServiceNotFoundException}
+import services.{CaasService, ProviderContext}
 
 class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService with ECSOps with EC2Ops {
 

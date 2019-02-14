@@ -1,4 +1,4 @@
-package services
+package services.ecs
 
 import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats,VolumeSpec}
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -13,6 +13,7 @@ import play.api.Logger
 import play.api.libs.json._
 import org.joda.time.DateTime
 import com.amazonaws.services.ecs.model._
+import services.ProviderContext
 
 // I would gladly move it to integrations as soon as ContainerSpec, VolumeSpec etc is moved to meta sdk/repositry
 trait ECSOps {

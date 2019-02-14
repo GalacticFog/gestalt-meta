@@ -1,4 +1,4 @@
-package services
+package services.ecs
 
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -20,6 +20,7 @@ import scala.collection.JavaConversions._
 import scala.concurrent.Future
 import scala.util.Success
 import com.galacticfog.gestalt.integrations.ecs._
+import services.ProviderContext
 
 @RunWith(classOf[JUnitRunner])
 class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {

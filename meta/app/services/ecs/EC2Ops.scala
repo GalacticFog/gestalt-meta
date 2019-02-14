@@ -1,4 +1,4 @@
-package services
+package services.ecs
 
 import com.galacticfog.gestalt.meta.api.ContainerStats
 import com.galacticfog.gestalt.integrations.ecs.EcsClient
