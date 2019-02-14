@@ -409,7 +409,12 @@ trait ECSOps {
         ContainerStats(
           external_id = service.getServiceArn(),
           containerType = "DOCKER",
-          status = service.getStatus(),
+          // "The status of the service. The valid values are ACTIVE, DRAINING, or INACTIVE."
+          status = service.getStatus() match {
+            case "ACTIVE" => "RUNNING"
+            case "DRAINING" => "RUNNING"
+            case "INACTIVE" => "STOPPED"
+          },
           cpus = cpus.toDouble / 1024,
           memory = memory.toDouble,
           image = containerDefn.getImage(),

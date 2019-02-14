@@ -111,7 +111,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
   }
 
   def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[SecretSpec.Item])
-                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
+                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.failed(new RuntimeException("Secrets are not supported by ECS"))
 
   def createVolume(context: ProviderContext, metaResource: Instance)
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
@@ -154,7 +154,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     }
   }
 
-  def destroySecret(secret: GestaltResourceInstance): Future[Unit] = Future.fromTryST(Try(???))
+  def destroySecret(secret: GestaltResourceInstance): Future[Unit] = Future.failed(new RuntimeException("Secrets are not supported by ECS"))
 
   def destroyVolume(volume: GestaltResourceInstance): Future[Unit] = {
     val volumeType = for(
@@ -172,10 +172,10 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
   }
 
   def update(context: ProviderContext, container: GestaltResourceInstance)
-            (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
+            (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.failed(new RuntimeException("Updates are not supported for ECS containers"))
 
   def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)
-                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
+                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.failed(new RuntimeException("Updates are not supported for ECS volumes"))
 
   def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -198,7 +198,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
   }
 
   def createJob(context: ProviderContext, metaResource: Instance)
-                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
+                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = create(context, metaResource)
   
-  def destroyJob(job: GestaltResourceInstance): Future[Unit] = Future.fromTryST(Try(???))
+  def destroyJob(job: GestaltResourceInstance): Future[Unit] = destroy(job)
 }
