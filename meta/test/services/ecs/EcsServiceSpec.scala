@@ -1,4 +1,4 @@
-package services
+package services.ecs
 
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -20,6 +20,7 @@ import scala.collection.JavaConversions._
 import scala.concurrent.Future
 import scala.util.Success
 import com.galacticfog.gestalt.integrations.ecs._
+import services.ProviderContext
 
 @RunWith(classOf[JUnitRunner])
 class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
@@ -146,7 +147,7 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       mockDescribeServicesResult.getFailures() returns new java.util.ArrayList(Seq.empty[Failure])
       val mockService = mock[Service]
       mockService.getServiceArn() returns "service arn"
-      mockService.getStatus() returns "status"
+      mockService.getStatus() returns "ACTIVE"
       val now = new java.util.Date()
       mockService.getCreatedAt() returns now
       mockService.getDesiredCount() returns 1
@@ -182,7 +183,7 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       containerStats must_==(Seq(ContainerStats(
         external_id = "service arn",
         containerType = "DOCKER",
-        status = "status",
+        status = "RUNNING",
         cpus = 1.0,
         memory = 2048.0,
         image = "container image",

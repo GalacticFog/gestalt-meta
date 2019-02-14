@@ -1,11 +1,14 @@
-package services
+package services.ecs
 
 import com.galacticfog.gestalt.meta.api.ContainerStats
 import com.galacticfog.gestalt.integrations.ecs.EcsClient
-import scala.util.{Try,Success,Failure}
-import cats.instances.vector._
-import cats.instances.try_._
+import com.galacticfog.gestalt.util.EitherWithErrors._
+import com.galacticfog.gestalt.util.Error
+import scala.util.Try
 import cats.syntax.traverse._
+import cats.syntax.either._
+import cats.instances.vector._
+import cats.instances.either._
 import play.api.Logger
 import com.amazonaws.services.ec2.model._
 
@@ -14,22 +17,23 @@ trait EC2Ops {
 
   private[this] val log = Logger(this.getClass)
 
-  def getInstancePrivateAddresses(client: EcsClient, instanceIds: Seq[String]): Try[Seq[(String,String)]] = {
+  def getInstancePrivateAddresses(client: EcsClient, instanceIds: Seq[String]): EitherError[Seq[(String,String)]] = {
     val dir = new DescribeInstancesRequest()
       .withInstanceIds(instanceIds)
     for(
-      reservations <- Try(client.ec2.describeInstances(dir)).map(_.getReservations());
+      reservations <- eitherFromTry(Try(client.ec2.describeInstances(dir)).map(_.getReservations()));
       instances = reservations.map(_.getInstances()).flatten;
       addresses <- instances.toVector traverse { instance =>
-        Option(instance.getPrivateIpAddress()) match {
-          case Some(ipAddr) => Success((instance.getInstanceId(), ipAddr))
-          case None => Failure(new RuntimeException(s"Private IP address not set on instance ${instance.getInstanceId()}"))
+        val ee: EitherError[(String,String)] = Option(instance.getPrivateIpAddress()) match {
+          case Some(ipAddr) => Right((instance.getInstanceId(), ipAddr))
+          case None => Left(Error.Default(s"Private IP address not set on instance ${instance.getInstanceId()}"))
         }
+        ee
       }
     ) yield addresses
   }
 
-  def populateContainerStatsWithPrivateAddresses(client: EcsClient, stats: ContainerStats): Try[ContainerStats] = {
+  def populateContainerStatsWithPrivateAddresses(client: EcsClient, stats: ContainerStats): EitherError[ContainerStats] = {
     if(client.launchType == "EC2" && !stats.taskStats.isEmpty) {
       val instanceIds = stats.taskStats.get.collect { case ts if ts.host != "" => ts.host }
       for(
@@ -43,7 +47,7 @@ trait EC2Ops {
         }
       ) yield stats.copy(taskStats=Some(updatedTaskStats))
     }else {
-      Success(stats)
+      Right(stats)
     }
   }
 }

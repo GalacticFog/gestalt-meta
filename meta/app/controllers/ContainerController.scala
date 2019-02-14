@@ -95,7 +95,7 @@ class ContainerController @Inject()(
       gri <- eitherFromJsResult(modifiedRequestBody.validate[GestaltResourceInput]);
       ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
       parentLink = Json.toJson(toLink(environment, None));
-      rawProperties <- Either.fromOption(gri.properties, "Properties not set").liftTo[EitherError];
+      rawProperties <- Either.fromOption(gri.properties, Error.Default("Properties not set"));
       payload = gri.copy(
         id=gri.id.orElse(Some(UUID.randomUUID())),
         owner=gri.owner.orElse(Some(ownerLink)),
@@ -136,7 +136,7 @@ class ContainerController @Inject()(
 
     val action = request.getQueryString("action").getOrElse("create")
     (for(
-      org <- Either.fromOption(Resource.findFqon(fqon), "could not locate org resource after authentication").liftTo[EitherError];
+      org <- Either.fromOption(Resource.findFqon(fqon), Error.Default("could not locate org resource after authentication"));
       env <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, environment),
        Error.NotFound(notFoundMessage(ResourceIds.Environment, environment)));
       futureRes <- action match {
@@ -190,7 +190,7 @@ class ContainerController @Inject()(
 
     val action = request.getQueryString("action").getOrElse("create")
     (for(
-      org <- Either.fromOption(Resource.findFqon(fqon), "could not locate org resource after authentication").liftTo[EitherError];
+      org <- Either.fromOption(Resource.findFqon(fqon), Error.Default("could not locate org resource after authentication"));
       env <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, environment),
        Error.NotFound(notFoundMessage(ResourceIds.Environment, environment)));
       futureRes <- action match {
@@ -263,7 +263,7 @@ class ContainerController @Inject()(
 
     val action = request.getQueryString("action").getOrElse("create")
     (for(
-      org <- Either.fromOption(Resource.findFqon(fqon), "could not locate org resource after authentication").liftTo[EitherError];
+      org <- Either.fromOption(Resource.findFqon(fqon), Error.Default("could not locate org resource after authentication"));
       env <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, environment),
        Error.NotFound(notFoundMessage(ResourceIds.Environment, environment)));
       futureRes <- action match {

@@ -4,6 +4,7 @@ import scala.language.implicitConversions
 import scala.concurrent.Future
 import scala.util.{Failure,Try}
 
+// Future.fromTry that doesn't swallow stacktrace
 object FutureFromTryST {
   private[this] def logStackTrace[A](t: Try[A]): Try[A] = {
     t recoverWith { case throwable => 

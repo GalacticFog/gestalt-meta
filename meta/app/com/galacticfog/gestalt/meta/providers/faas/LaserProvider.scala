@@ -6,7 +6,7 @@ import javax.inject.Inject
 import cats.syntax.either._
 import cats.syntax.traverse._
 import cats.instances.vector._
-// import cats.instances.either._
+import cats.instances.either._
 import play.api.Logger
 import play.api.libs.json._
 import play.api.libs.ws.WSClient
