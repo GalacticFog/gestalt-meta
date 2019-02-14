@@ -3,14 +3,15 @@ package services.ecs
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats,SecretSpec}
-import com.galacticfog.gestalt.util.EitherWithErrors._
+import com.galacticfog.gestalt.util.ResourceSerde
+import com.galacticfog.gestalt.util.EitherWithErrors.{eitherErrorEitherStringApplicativeError => _,_}
 import com.galacticfog.gestalt.util.FutureFromTryST._
 import com.galacticfog.gestalt.integrations.ecs.EcsClient
 import controllers.util.ContainerService
 import java.util.UUID
 import scala.annotation.tailrec
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 import cats.syntax.either._
 import cats.syntax.traverse._
 import cats.instances.vector._
@@ -18,25 +19,13 @@ import cats.instances.either._
 import com.google.inject.Inject
 import play.api.Logger
 import play.api.libs.json.Json
-import com.amazonaws.services.ecs.model.{ServiceNotActiveException,ServiceNotFoundException}
 import services.{CaasService, ProviderContext}
 
 class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService with ECSOps with EC2Ops {
 
   private val log = Logger(this.getClass)
 
-  private def cleanly[T](providerId: UUID)(f: EcsClient => Future[T]): Future[T] = {
-    import scala.concurrent.ExecutionContext.Implicits.global
-    awsSdkFactory.getEcsClient(providerId) flatMap { client =>
-      val fT = f(client)
-      fT.onComplete(_ => client.client.shutdown())
-      fT
-    }
-  }
-
-  private def composableCleanly(providerId: UUID) = {
-    import scala.concurrent.ExecutionContext.Implicits.global
-
+  private def composableCleanly(providerId: UUID)(implicit ec: ExecutionContext) = {
     new {
       def map[T](f: EcsClient => T): Future[T] = {
         awsSdkFactory.getEcsClient(providerId) map { client =>
@@ -55,65 +44,69 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     }
   }
 
+  def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
+    // the method signature doesn't support passing an implicit here – probably should be updated
+    import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-  def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {     // the method signature doesn't support passing an implicit here – probably should be updated
-    cleanly(context.provider.id) { client =>
-      ContainerService.resourceExternalId(container) match {
-        case Some(externalId) => {
-          val described = for(
-            (nextToken, services) <- describeServices(client, context, Seq(externalId)).liftTo[Try];
-            updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _)).liftTo[Try]
-          ) yield (nextToken, updatedServices)
-          Future.fromTryST(described flatMap {
-            case (None, Seq(stats)) => Success(Option(stats))
-            case other => Failure(new RuntimeException(s"Unexpected value returned from describeServices: `${other}`; this is a bug"))
-          })
+    ContainerService.resourceExternalId(container).fold(Future.successful[Option[ContainerStats]](None)) { externalId =>
+      for(
+        client <- composableCleanly(context.provider.id);
+        tss <- describeServices(client, context, Seq(externalId)).liftTo[Future];
+        (nextToken, services) = tss;
+        updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _)).liftTo[Future];
+        _ <- if(nextToken == None && services.size == 1) {
+          Future.successful(())
+        }else {
+          Future.failed(new RuntimeException(s"Unexpected value returned from describeServices: `${(nextToken, services)}`; this is a bug"))
         }
-        case None => Future.successful(None)
-      }
+      ) yield Some(services(0))
     }
   }
 
   def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
+    import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
     @tailrec
-    def describeAllServices(client: EcsClient, paginationToken: Option[String], stats: Seq[ContainerStats]): Try[Seq[ContainerStats]] = {
+    def describeAllServices(client: EcsClient, paginationToken: Option[String], stats: Seq[ContainerStats]): EitherError[Seq[ContainerStats]] = {
       val described = for(
-        (nextToken, services) <- describeServices(client, context, Seq(), paginationToken).liftTo[Try];
-        updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _)).liftTo[Try]
+        tss <- describeServices(client, context, Seq(), paginationToken);
+        (nextToken, services) = tss;
+        updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _))
       ) yield (nextToken, updatedServices)
       described match {
-        case Success((Some(token), moreStats)) => describeAllServices(client, Some(token), stats ++ moreStats)
-        case Success((None, moreStats)) => Success(stats ++ moreStats)
-        case Failure(throwable) => Failure(throwable)
+        case Right((Some(token), moreStats)) => describeAllServices(client, Some(token), stats ++ moreStats)
+        case Right((None, moreStats)) => Right(stats ++ moreStats)
+        case Left(error) => Left(error)
       }
     }
 
-    cleanly(context.provider.id) { client =>
-      Future.fromTryST(describeAllServices(client, None, Seq()))
-    }
+    for(
+      client <- composableCleanly(context.provider.id);
+      stats <- describeAllServices(client, None, Seq()).liftTo[Future]
+    ) yield stats
   }
 
   def create(context: ProviderContext, container: GestaltResourceInstance)
    (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-    cleanly(context.provider.id) { client =>
-      Future.fromTryST(for(
-        spec <- ContainerSpec.fromResourceInstance(container);
-        _ <- createTaskDefinition(client, container.id, spec, context).liftTo[Try];
-        serviceArn <- createService(client, container.id, spec, context).liftTo[Try]
-      ) yield {
-        val portMappings = spec.port_mappings map { pm =>
-          pm.copy(
-            expose_endpoint=Some(true),
-            service_address=Some(ContainerSpec.ServiceAddress(serviceArn, pm.container_port.getOrElse(0), None, None))
-          )
-        }
-        val values = Map(
-          "port_mappings" -> Json.toJson(portMappings).toString,
-          "external_id" -> serviceArn,
-          "status" -> "RUNNING"
+    for(
+      client <- composableCleanly(context.provider.id);
+      specProperties0 <- ResourceSerde.deserialize[ContainerSpec](container).liftTo[Future];
+      specProperties = specProperties0.copy(name=container.name);
+      _ <- createTaskDefinition(client, container.id, specProperties, context).liftTo[Future];
+      serviceArn <- createService(client, container.id, specProperties, context).liftTo[Future]
+    ) yield {
+      val portMappings = specProperties.port_mappings map { pm =>
+        pm.copy(
+          expose_endpoint=Some(true),
+          service_address=Some(ContainerSpec.ServiceAddress(serviceArn, pm.container_port.getOrElse(0), None, None))
         )
-        container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
-      })
+      }
+      val values = Map(
+        "port_mappings" -> Json.toJson(portMappings).toString,
+        "external_id" -> serviceArn,
+        "status" -> "RUNNING"
+      )
+      container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
     }
   }
 
@@ -136,40 +129,28 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
     
     val provider = ContainerService.containerProvider(container)
-    
-    def destroyRunningContainer(externalId: String): Future[Unit] = {
-      cleanly(provider.id) { client =>
-        Future.fromTryST(deleteService(client, externalId).liftTo[Try] recoverWith {
-          case _: ServiceNotActiveException => Success(())
-          case _: ServiceNotFoundException => Success(())
-        })
-      }
-    }
-    
-    ContainerService.resourceExternalId(container) match {
-      case Some(externalId) => {
-        // destroy() signature ought to be changed
-        val mounts = ContainerSpec.fromResourceInstance(container.asInstanceOf[GestaltResourceInstance]) map { spec =>
-          spec.volumes
-        } recoverWith { case e: Throwable =>
-          e.printStackTrace()
-          log.warn(s"Failed to deserialize container ${container.id}: ${e.getMessage}")
-          Failure(e)
-        } getOrElse {
-          Seq()
-        }
-        for(
-          _ <- destroyRunningContainer(externalId);
-          _ <- Future.traverse(mounts) {
+
+    ContainerService.resourceExternalId(container).fold(Future.successful(())) { externalId =>
+      for(
+        client <- composableCleanly(provider.id);
+        specProperties0 <- ResourceSerde.deserialize[ContainerSpec](container).liftTo[Future];
+        specProperties = specProperties0.copy(name=container.name);
+        deletedBackend = deleteService(client, externalId);
+        _ = deletedBackend.left foreach { errorMessage =>
+          log.warn(s"Failed to destroy ECS container on backend: ${errorMessage}")
+        };
+        deletedVolumes = specProperties.volumes.toVector traverse { volumeMount =>
+          val ee: EitherError[Unit] = volumeMount match {
             case ContainerSpec.ExistingVolumeMountSpec(_, volumeId) => {
-              // destroyVolume(volume)    // this is practically no-op now
-              Future.fromTryST(ResourceFactory.hardDeleteResource(volumeId))
+              // hardDeleteResource returns Try[Int]
+              eitherFromTry(ResourceFactory.hardDeleteResource(volumeId) map { _ => () })
             }
-            case _ => Future.successful(())
+            case _ => Right(())
           }
-        ) yield ()
-      }
-      case None => Future.successful(())    // the container wasn't created properly – can be safely deleted
+          ee
+        };
+        _ <- deletedVolumes.liftTo[Future]
+      ) yield ()
     }
   }
 
@@ -197,21 +178,22 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
 
   def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
-    cleanly(context.provider.id) { client =>
-      val scaled = for(
-        spec <- ContainerSpec.fromResourceInstance(container);
-        newNumInstances <- if(spec.external_id.getOrElse("") == "") {     // pending or lost container, doing nothing
-          Success(spec.num_instances)
-        }else {
-          scaleService(client, spec, context, numInstances).liftTo[Try] map { _ => numInstances}
-        }
-      ) yield {
-        val values = Map(
-          "num_instances" -> s"${newNumInstances}"
-        )
-        container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
+    import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
+    for(
+      client <- composableCleanly(context.provider.id);
+      specProperties0 <- ResourceSerde.deserialize[ContainerSpec](container).liftTo[Future];
+      specProperties = specProperties0.copy(name=container.name);
+      newNumInstances <- if(specProperties.external_id.getOrElse("") == "") {     // pending or lost container, doing nothing
+        Future.successful(specProperties.num_instances)
+      }else {
+        scaleService(client, specProperties, context, numInstances).liftTo[Future] map { _ => numInstances}
       }
-      Future.fromTryST(scaled)
+    ) yield {
+      val values = Map(
+        "num_instances" -> s"${newNumInstances}"
+      )
+      container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
     }
   }
 
