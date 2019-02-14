@@ -3,6 +3,7 @@ package services.ecs
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats,SecretSpec}
+import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.util.FutureFromTryST._
 import com.galacticfog.gestalt.integrations.ecs.EcsClient
 import controllers.util.ContainerService
@@ -10,9 +11,10 @@ import java.util.UUID
 import scala.annotation.tailrec
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Try,Success,Failure}
-import cats.instances.vector._
-import cats.instances.try_._
+import cats.syntax.either._
 import cats.syntax.traverse._
+import cats.instances.vector._
+import cats.instances.either._
 import com.google.inject.Inject
 import play.api.Logger
 import play.api.libs.json.Json
@@ -32,13 +34,35 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     }
   }
 
+  private def composableCleanly(providerId: UUID) = {
+    import scala.concurrent.ExecutionContext.Implicits.global
+
+    new {
+      def map[T](f: EcsClient => T): Future[T] = {
+        awsSdkFactory.getEcsClient(providerId) map { client =>
+          val t = f(client)
+          client.client.shutdown()
+          t
+        }
+      }
+      def flatMap[T](f: EcsClient => Future[T]): Future[T] = {
+        awsSdkFactory.getEcsClient(providerId) flatMap { client =>
+          val fT = f(client)
+          fT.onComplete(_ => client.client.shutdown())
+          fT
+        }
+      }
+    }
+  }
+
+
   def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {     // the method signature doesn't support passing an implicit here – probably should be updated
     cleanly(context.provider.id) { client =>
       ContainerService.resourceExternalId(container) match {
         case Some(externalId) => {
           val described = for(
-            (nextToken, services) <- describeServices(client, context, Seq(externalId));
-            updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _))
+            (nextToken, services) <- describeServices(client, context, Seq(externalId)).liftTo[Try];
+            updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _)).liftTo[Try]
           ) yield (nextToken, updatedServices)
           Future.fromTryST(described flatMap {
             case (None, Seq(stats)) => Success(Option(stats))
@@ -54,8 +78,8 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     @tailrec
     def describeAllServices(client: EcsClient, paginationToken: Option[String], stats: Seq[ContainerStats]): Try[Seq[ContainerStats]] = {
       val described = for(
-        (nextToken, services) <- describeServices(client, context, Seq(), paginationToken);
-        updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _))
+        (nextToken, services) <- describeServices(client, context, Seq(), paginationToken).liftTo[Try];
+        updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _)).liftTo[Try]
       ) yield (nextToken, updatedServices)
       described match {
         case Success((Some(token), moreStats)) => describeAllServices(client, Some(token), stats ++ moreStats)
@@ -74,8 +98,8 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     cleanly(context.provider.id) { client =>
       Future.fromTryST(for(
         spec <- ContainerSpec.fromResourceInstance(container);
-        _ <- createTaskDefinition(client, container.id, spec, context);
-        serviceArn <- createService(client, container.id, spec, context)
+        _ <- createTaskDefinition(client, container.id, spec, context).liftTo[Try];
+        serviceArn <- createService(client, container.id, spec, context).liftTo[Try]
       ) yield {
         val portMappings = spec.port_mappings map { pm =>
           pm.copy(
@@ -115,7 +139,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     
     def destroyRunningContainer(externalId: String): Future[Unit] = {
       cleanly(provider.id) { client =>
-        Future.fromTryST(deleteService(client, externalId) recoverWith {
+        Future.fromTryST(deleteService(client, externalId).liftTo[Try] recoverWith {
           case _: ServiceNotActiveException => Success(())
           case _: ServiceNotFoundException => Success(())
         })
@@ -179,7 +203,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
         newNumInstances <- if(spec.external_id.getOrElse("") == "") {     // pending or lost container, doing nothing
           Success(spec.num_instances)
         }else {
-          scaleService(client, spec, context, numInstances) map { _ => numInstances}
+          scaleService(client, spec, context, numInstances).liftTo[Try] map { _ => numInstances}
         }
       ) yield {
         val values = Map(
