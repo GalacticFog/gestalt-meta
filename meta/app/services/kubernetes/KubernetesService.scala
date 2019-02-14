@@ -1026,6 +1026,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     import KubernetesProviderProperties.Implicits._
     import skuber.json.batch.format._
     import cats.instances.list._
+    import cats.instances.either._
     import monocle.std.option._
 
     val podTemplateEnvSecretsOptics = GenLens[skuber.Pod.Template.Spec](_.spec) composePrism some composeLens

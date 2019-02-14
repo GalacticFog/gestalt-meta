@@ -143,18 +143,6 @@ object EitherWithErrors {
     }
   }
 
-  implicit def eitherErrorEitherStringApplicativeError(implicit ec: ExecutionContext) = new ApplicativeError[EitherError,String] {
-    def ap[A, B](ff: EitherError[(A) => B])(fa: EitherError[A]): EitherError[B] = fa.ap(ff)
-    def pure[A](x: A): EitherError[A] = Right(x)
-    def handleErrorWith[A](fa: EitherError[A])(f: String => EitherError[A]): EitherError[A] = {
-      fa match {
-        case Right(v) => Right(v)
-        case Left(error) => f(error.message)
-      }
-    }
-    def raiseError[A](e: String): EitherError[A] = Left(Error.Default(e))
-  }
-
   implicit def futureStringApplicativeError(implicit ec: ExecutionContext) = new ApplicativeError[Future,String] {
     def ap[A, B](ff: Future[(A) => B])(fa: Future[A]): Future[B] = {
       ApplicativeError[Future,Throwable].ap(ff)(fa)

@@ -4,7 +4,7 @@ import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats,SecretSpec}
 import com.galacticfog.gestalt.util.ResourceSerde
-import com.galacticfog.gestalt.util.EitherWithErrors.{eitherErrorEitherStringApplicativeError => _,_}
+import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.util.FutureFromTryST._
 import com.galacticfog.gestalt.integrations.ecs.EcsClient
 import controllers.util.ContainerService
