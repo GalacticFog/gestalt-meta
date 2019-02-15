@@ -4,7 +4,6 @@ import java.util.{TimeZone, UUID}
 
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
 import com.galacticfog.gestalt.meta.api.ContainerStats.{ContainerStateStat, EventStat}
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -34,7 +33,7 @@ import skuber.json.rbac.format._
 import skuber.json.format._
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.util.Failure
 
 class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   extends CaasService with JsonInput with MetaControllerUtils {
@@ -75,6 +74,15 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
+  private def mkLabels(context: ProviderContext): Map[String,String] = {
+    Map(
+      META_ENVIRONMENT_KEY -> context.environmentId.toString,
+      META_WORKSPACE_KEY -> context.workspace.id.toString,
+      META_FQON_KEY -> context.fqon,
+      META_PROVIDER_KEY -> context.providerId.toString
+    )
+  }
+
   private def getNamespaceForResource(resource: ResourceLike, resourceName: String): String = {
     // why not attempt to take the namespace from external_id first?
 
@@ -93,28 +101,43 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   def createSecret(context: ProviderContext, secret: GestaltResourceInstance, items: Seq[SecretSpec.Item])(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+    import KubernetesProviderProperties.Implicits._
 
-    def createKubeSecret(kube: RequestContext, secretId: UUID, spec: SecretSpec, namespace: String, context: ProviderContext): Future[Secret] = {
-      kube.create[Secret](mks.mkSecret(secretId, spec, namespace, context)) recoverWith { case e: K8SException =>
+    // this will be gone sooner or later
+    val secretWithName = secret.copy(
+      properties=secret.properties map { props =>
+        props ++ Map("name" -> secret.name)
+      }
+    )
+
+    for(
+      spec0 <- ResourceSerde.deserialize[SecretSpec,Error.UnprocessableEntity](secretWithName).liftTo[Future];
+      spec = spec0.copy(items=items);
+      providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](context.provider).liftTo[Future];
+      namespace <- cleanly(context.provider, DefaultNamespace)( getNamespace(_, context, create = true) );
+      k8sSecret0 <- mks.mkSecret(providerProperties, spec).liftTo[Future];
+      k8sSecret = k8sSecret0.copy(
+        metadata = skuber.ObjectMeta(
+          name = secret.name,
+          namespace = namespace.name,
+          labels = Map(
+            META_SECRET_KEY -> s"${secret.id}"
+          ) ++ mkLabels(context)
+        )
+      );
+      kube <- composableCleanly(context.provider, namespace.name);
+      created <- kube.create[Secret](k8sSecret) recoverWith { case e: K8SException =>
+        e.printStackTrace()
         Future.failed(new RuntimeException(s"Failed creating Secret '${spec.name}': " + e.status.message))
       }
-    }
-
-    SecretSpec.fromResourceInstance(secret) match {
-      case _ if items.exists(_.value.isEmpty) => Future.failed(new BadRequestException("secret item was missing value"))
-      case Failure(e) => Future.failed(e)
-      case Success(spec) =>
-        val specWithItems = spec.copy(
-          items = items
-        )
-        for {
-          namespace <- cleanly(context.provider, DefaultNamespace)( getNamespace(_, context, create = true) )
-          output    <- cleanly(context.provider, namespace.name  )( createKubeSecret(_, secret.id, specWithItems, namespace.name, context) )
-        } yield upsertProperties(
-          secret,
-          "items" -> Json.toJson(items.map(_.copy(value = None))).toString,
-          "external_id" -> s"/namespaces/${namespace.name}/secrets/${secret.name}"
-        )
+    ) yield {
+      val prunedItems = spec.items.map(_.copy(value=None))
+      val extraProps = Map(
+        "external_id" -> s"/namespaces/${created.namespace}/secrets/${created.name}",
+        "status" -> "LAUNCHED",
+        "items" -> Json.stringify(Json.toJson(prunedItems))
+      )
+      secret.copy(properties = Some((secret.properties getOrElse Map()) ++ extraProps))
     }
   }
 
@@ -157,51 +180,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  // def create(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-  //   log.debug("create(...)")
-  //   for {
-  //     spec <- Future.fromTry(ContainerSpec.fromResourceInstance(container))
-  //     namespace  <- cleanly(context.provider, DefaultNamespace)( getNamespace(_, context, create = true) )
-  //     updatedContainerSpec <- cleanly(context.provider, namespace.name)( createDeploymentEtAl(_, container.id, spec, namespace.name, context) )
-  //   } yield upsertProperties(
-  //     container,
-  //     "external_id" -> s"/namespaces/${namespace.name}/deployments/${container.name}",
-  //     "status" -> "LAUNCHED",
-  //     "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
-  //   )
-  // }
-
   def create(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.debug("create(...)")
     createDeployment(context, container)
   }
-
-  // def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-  //   log.debug("update(...)")
-  //   val nameGetter = "/namespaces/[^/]+/deployments/(.*)".r
-  //   val previousName = for {
-  //     eid <- ContainerService.resourceExternalId(container)
-  //     prev <- eid match {
-  //       case nameGetter(name) => Some(name)
-  //       case _ => None
-  //     }
-  //   } yield prev
-  //   if (previousName.exists(_ != container.name)) return Future.failed(new BadRequestException("renaming containers is not supported"))
-  //   ContainerSpec.fromResourceInstance(container).map(
-  //     c => c.copy(name = previousName getOrElse c.name)
-  //   ) match {
-  //     case Failure(e) => Future.failed(e)
-  //     case Success(spec) => for {
-  //       namespace  <- cleanly(context.provider, DefaultNamespace)( getNamespace(_, context, create = true) )
-  //       updatedContainerSpec <- cleanly(context.provider, namespace.name)( kube =>
-  //           updateDeploymentEtAl(kube, container.id, spec, namespace.name, context)
-  //       )
-  //     } yield upsertProperties(
-  //       container,
-  //       "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
-  //     )
-  //   }
-  // }
 
   def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.debug("update(...)")
@@ -253,12 +235,12 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           for(
             namespace <- rc.create(Namespace(metadata = ObjectMeta(
               name = targetNamespace,
-              labels = mks.mkLabels(pc)
+              labels = mkLabels(pc)
             )));
             _ <- rc.create(new ClusterRoleBinding(
               metadata = ObjectMeta(
                 name = s"${targetNamespace}-cluster-admin",
-                labels = mks.mkLabels(pc)
+                labels = mkLabels(pc)
               ),
               roleRef = Some(new RoleRef("rbac.authorization.k8s.io", "ClusterRole", "cluster-admin")),
               subjects = List(new Subject(None, "ServiceAccount", "default", Some(targetNamespace)))
@@ -303,155 +285,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   // private def setPostLaunchStatus(container: GestaltResourceInstance): GestaltResourceInstance = {
   //   upsertProperties(container, "status" -> "LAUNCHED")
   // }
-
-  private def updateIngress(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Option[Ingress]] = {
-    // start this async call early, we'll need it later
-    val fExistingIngress = kube.getOption[Ingress](spec.name)
-    /*
-     * create new ingress spec
-     * if empty, delete any existing ingress
-     * if not empty, update or create
-     */
-    val maybeNewIng = mks.mkIngressSpec(containerId, spec, namespace, context)
-    fExistingIngress flatMap { maybeExistingIng =>
-      (maybeExistingIng,maybeNewIng) match {
-        case (None, None)            => Future.successful(None)
-        case (Some(ing), None)         =>
-          log.debug(s"updateIngress: deleting ${ing.name}")
-          kube.delete[Ingress](ing.name) map (_ => None)
-        case (None, Some(create))    =>
-          log.debug(s"updateIngress: creating ${create.name}")
-          kube.create[Ingress](create) map (Some(_))
-        case (Some(_), Some(upd8)) =>
-          log.debug(s"updateIngress: updating ${upd8.name}")
-          kube.update[Ingress](upd8) map (Some(_))
-      }
-    }
-  }
-
-  private def createIngress(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Option[Ingress]] = {
-    mks.mkIngressSpec(containerId, spec, namespace, context).fold { Future.successful(Option.empty[Ingress]) }
-                                                 { kube.create[Ingress](_) map(Some(_)) }
-  }
-
-  private def getContainerServices(kube: RequestContext, containerId: UUID): Future[ContainerServices] = {
-    kube.listSelected[ServiceList](LabelSelector(LabelSelector.IsEqualRequirement(
-      META_CONTAINER_KEY, containerId.toString
-    ))) map { svcList =>
-      ContainerServices(
-        svcList.items.filter(_.spec.exists(_._type == Service.Type.ClusterIP)).headOption,
-        svcList.items.filter(_.spec.exists(_._type == Service.Type.NodePort)).headOption,
-        svcList.items.filter(_.spec.exists(_._type == Service.Type.LoadBalancer)).headOption
-      )
-    }
-  }
-
-  private def reconcileSvc(kube: RequestContext, plan: (Option[Service], Option[Service])): Future[Option[Service]] = {
-    plan match {
-      case (None, None)            => Future.successful(None)
-      case (Some(cur), None)       =>
-        log.debug(s"reconcileSvc: deleting ${cur.name}")
-        kube.delete[Service](cur.name).map(_ => None)
-      case (None, Some(create))    =>
-        log.debug(s"reconcileSvc: creating ${create.name}")
-        kube.create[Service](create) map Some.apply
-      case (Some(cur), Some(upd8)) =>
-        log.debug(s"reconcileSvc: updating ${upd8.name}")
-        kube.update[Service](
-        cur.spec.map(_.clusterIP).foldLeft[skuber.Service] (
-          upd8.withResourceVersion(cur.resourceVersion)
-        ) { (svc,clusterIP) => svc.withClusterIP(clusterIP) }
-      ) map Some.apply
-    }
-  }
-
-  private def updateServices(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Seq[PortMapping]] = {
-
-    // start this async call early, we'll need it later
-    val fExistingSvcs = getContainerServices(kube, containerId)
-    /*
-     * create new service spec(s)
-     * if empty, delete any service(s)
-     * if not empty, update or create
-     */
-    val newServices = mks.mkServiceSpecs(containerId, spec, namespace, context)
-    for {
-      existingSvcs <- fExistingSvcs
-      upInt <- reconcileSvc(kube, existingSvcs.intSvc -> newServices.intSvc)
-      upExt <- reconcileSvc(kube, existingSvcs.extSvc -> newServices.extSvc)
-      upLb  <- reconcileSvc(kube, existingSvcs.lbSvc  -> newServices.lbSvc)
-      updatedPMs = updateContainerSpecPortMappings(spec.port_mappings, namespace, ContainerServices(
-        upInt,
-        upExt,
-        upLb
-      ))
-    } yield updatedPMs
-  }
-
-  private def createServices(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Seq[PortMapping]] = {
-    val svcs = mks.mkServiceSpecs(containerId, spec, namespace, context)
-    for {
-      svcs <- Future.traverse(Seq(svcs.intSvc, svcs.extSvc, svcs.lbSvc)) {
-        case Some(svc) => kube.create[Service](svc) map Some.apply
-        case      None => Future.successful(None)
-      }
-      updatedPMs = updateContainerSpecPortMappings(spec.port_mappings, namespace, ContainerServices(
-        svcs(0), svcs(1), svcs(2)
-      ))
-    } yield updatedPMs
-  }
-
-  /**
-    * Create a Deployment with services in Kubernetes
-    */
-  private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, context: ProviderContext): Future[ContainerSpec] = {
-    log.debug("createDeploymentEtAl")
-    val fDeployment = kube.create[Deployment](mks.mkDeploymentSpec(containerId, spec, context, namespace))
-    fDeployment.onFailure{
-      case e: Throwable => log.error(s"error creating Kubernetes Deployment for container ${containerId}; assuming that it was not created",e)
-    }
-    val fUpdatedPMsFromService = createServices(kube, namespace, containerId, spec, context) recover {
-      case e: Throwable =>
-        log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
-        spec.port_mappings
-    }
-    val fIngress = createIngress(kube, namespace, containerId, spec, context) recover {
-      case e: Throwable =>
-        log.error(s"error creating Kubernetes Ingress for container ${containerId}; assuming that it was not created",e)
-        ()
-    }
-    for {
-      dep <- fDeployment
-      _   <- fIngress
-      updatedPMs <- fUpdatedPMsFromService
-    } yield spec.copy(
-      port_mappings = updatedPMs
-    )
-  }
-
-  /**
-   * Update a Deployment in Kubernetes, updating/creating/deleting Services/Ingresses as needed
-   */
-  private[services] def updateDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, context: ProviderContext): Future[ContainerSpec] = {
-    val fDepl = kube.update[Deployment](mks.mkDeploymentSpec(containerId, spec, context, namespace))
-    val fUpdatedPMsFromService = updateServices(kube, namespace, containerId, spec, context) recover {
-      case e: Throwable =>
-        log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
-        spec.port_mappings
-    }
-    val fIngress = updateIngress(kube, namespace, containerId, spec, context) recover {
-      case e: Throwable =>
-        log.error(s"error updating Kubernetes Ingress for container ${containerId}; assuming that is in an invalid state",e)
-        ()
-    }
-    for {
-      _ <- fDepl
-      _ <- fIngress
-      updatedPMs <- fUpdatedPMsFromService
-    } yield spec.copy(
-      port_mappings = updatedPMs
-    )
-  }
 
   def destroy(container: GestaltResourceInstance): Future[Unit] = {
     log.debug("destroy(_)")
@@ -598,68 +431,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     } yield deletes
   }
 
-  private[services] def updateContainerSpecPortMappings(pms: Seq[ContainerSpec.PortMapping], namespace: String, services: ContainerServices): Seq[PortMapping] = {
-    def svcMatch(pm: ContainerSpec.PortMapping, sp: Service.Port)  = {
-      pm.name.contains(sp.name) || (pm.lb_port.filter(_ != 0) orElse pm.container_port).contains(sp.port)
-    }
-
-    services.intSvc match {
-      case None =>
-        log.debug(s"updateContainerSpecPortMappings: No Service(ClusterIP)")
-        pms.map(_.copy(
-          service_address = None,
-          lb_address = None
-        ))
-      case Some(cipSvc) =>
-        val svcHost = s"${cipSvc.name}.${namespace}.svc.cluster.local"
-        val cipPorts = cipSvc.spec.map(_.ports) getOrElse List.empty
-        pms.map {
-          pm => cipPorts.find( svcMatch(pm, _) ) match {
-            case Some(sp) if pm.expose_endpoint.contains(true) =>
-              log.debug(s"updateContainerSpecPortMappings: PortMapping ${pm} matched to Service.Port ${sp}")
-              val nodePort = services.extSvc.flatMap(
-                _.spec.flatMap(
-                  _.ports.find( svcMatch(pm, _) )
-                )
-              ) map (_.nodePort)
-              val lbAddress = for {
-                lbSvc <- services.lbSvc
-                spec <- lbSvc.spec
-                pm <- spec.ports.find( svcMatch(pm, _) )
-                lbStatus <- lbSvc.status.flatMap(_.loadBalancer).flatMap(_.ingress.headOption)
-                addr <- lbStatus.hostName orElse lbStatus.ip
-              } yield (addr, pm.port, "http")
-              pm.copy(
-                service_port = nodePort,
-                service_address = Some(ContainerSpec.ServiceAddress(
-                  host = svcHost,
-                  port = sp.port,
-                  protocol = Some(pm.protocol)
-                )),
-                lb_address = lbAddress.map(
-                  a => ContainerSpec.ServiceAddress(
-                    host = a._1,
-                    port = a._2,
-                    protocol = Some(a._3)
-                  )
-                ),
-                lb_port = Some(sp.port),
-                `type` = pm.`type` orElse(Some("internal"))
-              )
-            case _ =>
-              log.debug(s"updateContainerSpecPortMappings: PortMapping ${pm} not matched")
-              pm.copy(
-                service_address = None,
-                lb_address = None,
-                lb_port = None,
-                expose_endpoint = Some(false),
-                `type` = None
-              )
-          }
-        }
-    }
-  }
-
   private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
@@ -764,6 +535,12 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         stats.map(_.flatten)
       }
     }
+  }
+
+  private def skuberTimestampToJodaDateTime(timestamp: skuber.Timestamp): DateTime = {
+    new DateTime(
+      timestamp.toInstant().toEpochMilli(),
+      DateTimeZone.forTimeZone(TimeZone.getTimeZone(timestamp.getZone())))
   }
 
   private[this] def kubeDeplAndPodsToContainerStatus(depl: Deployment, pods: List[Pod], maybeLbSvc: Option[Service], events : List[Event] = Nil): ContainerStats = {
@@ -898,26 +675,29 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     })
   }
 
-  def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = cleanly(context.provider, context.environmentId.toString) { kube =>
-    for {
-      extantDepl <- kube.getOption[Deployment](container.name) flatMap {
-        case Some(depl) => Future.successful(depl)
-        case None => Future.failed(new RuntimeException(
-          s"could not locate associated Deployment in Kubernetes provider for container ${container.id}"
-        ))
-      }
-      updatedDepl <- {
-        val newDepl = extantDepl.withReplicas(numInstances)
-        log.debug(s"updating deployment to scale: ${Json.toJson(newDepl)}")
-        kube.update(newDepl)
-      }
-      updatedNumInstances = updatedDepl.spec.flatMap(_.replicas).getOrElse(
-        throw new RuntimeException(s"updated Deployment for container ${container.id} did not have a spec, so that replica size could not be determined")
+  def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
+    // shouldn't this attempt to take namespace from external_id ?
+    cleanly(context.provider, context.environmentId.toString) { kube =>
+      for {
+        extantDepl <- kube.getOption[Deployment](container.name) flatMap {
+          case Some(depl) => Future.successful(depl)
+          case None => Future.failed(new RuntimeException(
+            s"could not locate associated Deployment in Kubernetes provider for container ${container.id}"
+          ))
+        }
+        updatedDepl <- {
+          val newDepl = extantDepl.withReplicas(numInstances)
+          log.debug(s"updating deployment to scale: ${Json.toJson(newDepl)}")
+          kube.update(newDepl)
+        }
+        updatedNumInstances = updatedDepl.spec.flatMap(_.replicas).getOrElse(
+          throw new RuntimeException(s"updated Deployment for container ${container.id} did not have a spec, so that replica size could not be determined")
+        )
+      } yield upsertProperties(
+        container,
+        "num_instances" -> s"${updatedNumInstances}"
       )
-    } yield upsertProperties(
-      container,
-      "num_instances" -> s"${updatedNumInstances}"
-    )
+    }
   }
 
   def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
@@ -926,14 +706,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     import monocle.std.option._
     import cats.instances.option._
 
-    val pvcLabelsOptics = GenLens[skuber.PersistentVolumeClaim](_.metadata.labels)
-    val pvLabelsOptics = GenLens[skuber.PersistentVolume](_.metadata.labels)
-    val pvNameOptics = GenLens[skuber.PersistentVolume](_.metadata.name)
-
-    val pvClaimRefNamespaceOptics = GenLens[skuber.PersistentVolume](_.spec) composePrism some composeLens
-     GenLens[skuber.PersistentVolume.Spec](_.claimRef) composePrism some composeLens
+    val pvClaimRefNamespaceOptics = GenLens[skuber.PersistentVolume.Spec](_.claimRef) composePrism some composeLens
      GenLens[skuber.ObjectReference](_.namespace)
-    val pvcNamespaceOptics = GenLens[skuber.PersistentVolumeClaim](_.metadata.namespace)
     val pvSourceOptics = GenLens[skuber.PersistentVolume](_.spec) composePrism some composeLens
      GenLens[skuber.PersistentVolume.Spec](_.source)
 
@@ -941,32 +715,48 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       spec0 <- ResourceSerde.deserialize[VolumeSpec,Error.UnprocessableEntity](metaResource).liftTo[Future];
       spec = spec0.copy(name=metaResource.name);
       providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](context.provider).liftTo[Future];
-      pvcpvSpecs <- mks.mkPVCandPV(providerProperties, spec).liftTo[Future];
+      pvcSpec <- mks.mkPvcSpec(providerProperties, spec).liftTo[Future];
+      pvSpecOpt <- mks.mkPvSpec(providerProperties, spec).liftTo[Future];
       labels = Map(
         META_VOLUME_KEY -> s"${metaResource.id}"
-      ) ++ mks.mkLabels(context);
-      pvcSpec = pvcLabelsOptics.modify(_ ++ labels)(pvcpvSpecs._1);
-      pvSpecOpt = ((some composeLens pvLabelsOptics).modify(_ ++ labels) compose
-       (some composeLens pvNameOptics).modify(_ ++ s"-${metaResource.id}"))(pvcpvSpecs._2);
+      ) ++ mkLabels(context);
       namespace <- cleanly(context.provider, DefaultNamespace) { kube =>
         getNamespace(kube, context, create = true)
       };
+      pvc = skuber.PersistentVolumeClaim(
+        metadata = skuber.ObjectMeta(
+          name = spec.name,
+          namespace = namespace.name,
+          labels = labels
+        ),
+        spec = Some(pvcSpec)
+      );
+      pvOpt = pvSpecOpt map { pvSpec =>
+        skuber.PersistentVolume(
+          metadata = skuber.ObjectMeta(
+            name = s"${spec.name.take(8)}-${metaResource.id}",
+            namespace = namespace.name,
+            labels = labels
+          ),
+          spec = Some(pvClaimRefNamespaceOptics.set(namespace.name)(pvSpec))
+        )
+      };
       kube <- composableCleanly(context.provider, namespace.name);
-      _ <- (pvSpecOpt map { pvSpec =>
-        kube.create[PersistentVolume](pvClaimRefNamespaceOptics.set(namespace.name)(pvSpec)) recoverWith { case e: K8SException =>
+      _ <- (pvOpt map { pv =>
+        kube.create[PersistentVolume](pv) recoverWith { case e: K8SException =>
           e.printStackTrace()
           Future.failed(new RuntimeException(s"Failed creating PersistentVolume for volume '${metaResource.name}': " + e.status.message))
         }
       }).sequence;
-      pvc <- kube.create[PersistentVolumeClaim](pvcNamespaceOptics.set(namespace.name)(pvcSpec)) recoverWith { case e: K8SException =>
+      createdPvc <- kube.create[PersistentVolumeClaim](pvc) recoverWith { case e: K8SException =>
         e.printStackTrace()
         Future.failed(new RuntimeException(s"Failed creating PersistentVolumeClaim for volume '${metaResource.name}': " + e.status.message))
       }
     ) yield {
       val externalId = Map(
-        "external_id" -> s"/namespaces/${pvc.namespace}/persistentvolumeclaims/${pvc.name}"
+        "external_id" -> s"/namespaces/${createdPvc.namespace}/persistentvolumeclaims/${createdPvc.name}"
       )
-      val reclamationPolicy = (some composeOptional pvSourceOptics).getOption(pvSpecOpt) match {
+      val reclamationPolicy = (some composeOptional pvSourceOptics).getOption(pvOpt) match {
         case Some(_: skuber.Volume.HostPath) | Some(_: skuber.Volume.GenericVolumeSource) => Map("reclamation_policy" -> "delete_persistent_volume")
         case _ => Map()
       }
@@ -1040,11 +830,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     Future.successful(metaResource)
   }
 
-  private def skuberTimestampToJodaDateTime(timestamp: skuber.Timestamp): DateTime = {
-    new DateTime(
-      timestamp.toInstant().toEpochMilli(),
-      DateTimeZone.forTimeZone(TimeZone.getTimeZone(timestamp.getZone())))
-  }
 
   private def fillSecretsInPodTemplate(context: ProviderContext, specProperties: ContainerSpec, podTemplate: skuber.Pod.Template.Spec): EitherError[skuber.Pod.Template.Spec] = {
     import cats.instances.list._
@@ -1167,12 +952,12 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       podTemplateWithLabels = podTemplateWithVolumes.addLabels(
         specProperties.labels ++ Map(
           KubernetesConstants.META_CONTAINER_KEY -> s"${metaResource.id}"
-        ) ++ mks.mkLabels(context)
+        ) ++ mkLabels(context)
       );
       clusterIpServiceSpec <- mks.mkClusterIpServiceSpec(providerProperties, specProperties);
       nodePortServiceSpec <- mks.mkNodePortServiceSpec(providerProperties, specProperties);
       loadBalancerServiceSpec <- mks.mkLoadBalancerServiceSpec(providerProperties, specProperties);
-      ingressSpec <- mks.mkIngressSpec2(providerProperties, specProperties)
+      ingressSpec <- mks.mkIngressSpec(providerProperties, specProperties)
     ) yield {
       val deployment = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
@@ -1180,7 +965,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           namespace = "",
           labels = specProperties.labels ++ Map(
             KubernetesConstants.META_CONTAINER_KEY -> s"${metaResource.id}"
-          ) ++ mks.mkLabels(context)
+          ) ++ mkLabels(context)
         ),
         spec = Some(skuber.ext.Deployment.Spec(
           replicas = Some(specProperties.num_instances),
@@ -1197,7 +982,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             namespace = "",
             labels = Map(
               KubernetesConstants.META_CONTAINER_KEY -> s"${metaResource.id}"
-            ) ++ mks.mkLabels(context)
+            ) ++ mkLabels(context)
           ),
           spec = Some(spec.withSelector(Map(KubernetesConstants.META_CONTAINER_KEY -> s"${metaResource.id}")))
         )
@@ -1209,7 +994,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             namespace = "",
             labels = Map(
               KubernetesConstants.META_CONTAINER_KEY -> s"${metaResource.id}"
-            ) ++ mks.mkLabels(context)
+            ) ++ mkLabels(context)
           ),
           spec = Some(spec)
         )
@@ -1285,7 +1070,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  def createDeployment(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+  private def createDeployment(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     import cats.instances.option._
 
     for(
@@ -1341,7 +1126,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  def updateDeployment(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+  private def updateDeployment(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     import monocle.std.option._
 
     val nameGetter = "/namespaces/[^/]+/deployments/(.*)".r
@@ -1457,7 +1242,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           namespace = "",
           labels = Map(
             KubernetesConstants.META_JOB_KEY -> s"${metaResource.id}"
-          ) ++ mks.mkLabels(context)
+          ) ++ mkLabels(context)
         ),
         spec = Some(skuber.batch.Job.Spec(
           template = Some(podTemplateWithVolumes)
