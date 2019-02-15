@@ -25,22 +25,12 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
 
   private val log = Logger(this.getClass)
 
-  private def composableCleanly(providerId: UUID)(implicit ec: ExecutionContext) = {
-    new {
-      def map[T](f: EcsClient => T): Future[T] = {
-        awsSdkFactory.getEcsClient(providerId) map { client =>
-          val t = f(client)
-          client.client.shutdown()
-          t
-        }
-      }
-      def flatMap[T](f: EcsClient => Future[T]): Future[T] = {
-        awsSdkFactory.getEcsClient(providerId) flatMap { client =>
-          val fT = f(client)
-          fT.onComplete(_ => client.client.shutdown())
-          fT
-        }
-      }
+  private def cleanly[T](providerId: UUID)(f: EcsClient => Future[T]): Future[T] = {
+    import scala.concurrent.ExecutionContext.Implicits.global
+    awsSdkFactory.getEcsClient(providerId) flatMap { client =>
+      val fT = f(client)
+      fT.onComplete(_ => client.client.shutdown())
+      fT
     }
   }
 
@@ -49,17 +39,18 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
     ContainerService.resourceExternalId(container).fold(Future.successful[Option[ContainerStats]](None)) { externalId =>
-      for(
-        client <- composableCleanly(context.provider.id);
-        tss <- describeServices(client, context, Seq(externalId)).liftTo[Future];
-        (nextToken, services) = tss;
-        updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _)).liftTo[Future];
-        _ <- if(nextToken == None && services.size == 1) {
-          Future.successful(())
-        }else {
-          Future.failed(new RuntimeException(s"Unexpected value returned from describeServices: `${(nextToken, services)}`; this is a bug"))
-        }
-      ) yield Some(services(0))
+      cleanly(context.provider.id) { client =>
+        for(
+          tss <- describeServices(client, context, Seq(externalId)).liftTo[Future];
+          (nextToken, services) = tss;
+          updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _)).liftTo[Future];
+          _ <- if(nextToken == None && services.size == 1) {
+            Future.successful(())
+          }else {
+            Future.failed(new RuntimeException(s"Unexpected value returned from describeServices: `${(nextToken, services)}`; this is a bug"))
+          }
+        ) yield Some(services(0))
+      }
     }
   }
 
@@ -80,33 +71,33 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
       }
     }
 
-    for(
-      client <- composableCleanly(context.provider.id);
-      stats <- describeAllServices(client, None, Seq()).liftTo[Future]
-    ) yield stats
+    cleanly(context.provider.id) { client =>
+      describeAllServices(client, None, Seq()).liftTo[Future]
+    }
   }
 
   def create(context: ProviderContext, container: GestaltResourceInstance)
    (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-    for(
-      client <- composableCleanly(context.provider.id);
-      specProperties0 <- ResourceSerde.deserialize[ContainerSpec](container).liftTo[Future];
-      specProperties = specProperties0.copy(name=container.name);
-      _ <- createTaskDefinition(client, container.id, specProperties, context).liftTo[Future];
-      serviceArn <- createService(client, container.id, specProperties, context).liftTo[Future]
-    ) yield {
-      val portMappings = specProperties.port_mappings map { pm =>
-        pm.copy(
-          expose_endpoint=Some(true),
-          service_address=Some(ContainerSpec.ServiceAddress(serviceArn, pm.container_port.getOrElse(0), None, None))
+    cleanly(context.provider.id) { client =>
+      for(
+        specProperties0 <- ResourceSerde.deserialize[ContainerSpec](container).liftTo[Future];
+        specProperties = specProperties0.copy(name=container.name);
+        _ <- createTaskDefinition(client, container.id, specProperties, context).liftTo[Future];
+        serviceArn <- createService(client, container.id, specProperties, context).liftTo[Future]
+      ) yield {
+        val portMappings = specProperties.port_mappings map { pm =>
+          pm.copy(
+            expose_endpoint=Some(true),
+            service_address=Some(ContainerSpec.ServiceAddress(serviceArn, pm.container_port.getOrElse(0), None, None))
+          )
+        }
+        val values = Map(
+          "port_mappings" -> Json.toJson(portMappings).toString,
+          "external_id" -> serviceArn,
+          "status" -> "RUNNING"
         )
+        container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
       }
-      val values = Map(
-        "port_mappings" -> Json.toJson(portMappings).toString,
-        "external_id" -> serviceArn,
-        "status" -> "RUNNING"
-      )
-      container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
     }
   }
 
@@ -131,26 +122,27 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     val provider = ContainerService.containerProvider(container)
 
     ContainerService.resourceExternalId(container).fold(Future.successful(())) { externalId =>
-      for(
-        client <- composableCleanly(provider.id);
-        specProperties0 <- ResourceSerde.deserialize[ContainerSpec](container).liftTo[Future];
-        specProperties = specProperties0.copy(name=container.name);
-        deletedBackend = deleteService(client, externalId);
-        _ = deletedBackend.left foreach { errorMessage =>
-          log.warn(s"Failed to destroy ECS container on backend: ${errorMessage}")
-        };
-        deletedVolumes = specProperties.volumes.toVector traverse { volumeMount =>
-          val ee: EitherError[Unit] = volumeMount match {
-            case ContainerSpec.ExistingVolumeMountSpec(_, volumeId) => {
-              // hardDeleteResource returns Try[Int]
-              eitherFromTry(ResourceFactory.hardDeleteResource(volumeId) map { _ => () })
+      cleanly(provider.id) { client =>
+        for(
+          specProperties0 <- ResourceSerde.deserialize[ContainerSpec](container).liftTo[Future];
+          specProperties = specProperties0.copy(name=container.name);
+          deletedBackend = deleteService(client, externalId);
+          _ = deletedBackend.left foreach { errorMessage =>
+            log.warn(s"Failed to destroy ECS container on backend: ${errorMessage}")
+          };
+          deletedVolumes = specProperties.volumes.toVector traverse { volumeMount =>
+            val ee: EitherError[Unit] = volumeMount match {
+              case ContainerSpec.ExistingVolumeMountSpec(_, volumeId) => {
+                // hardDeleteResource returns Try[Int]
+                eitherFromTry(ResourceFactory.hardDeleteResource(volumeId) map { _ => () })
+              }
+              case _ => Right(())
             }
-            case _ => Right(())
-          }
-          ee
-        };
-        _ <- deletedVolumes.liftTo[Future]
-      ) yield ()
+            ee
+          };
+          _ <- deletedVolumes.liftTo[Future]
+        ) yield ()
+      }
     }
   }
 
@@ -180,20 +172,21 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
   def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-    for(
-      client <- composableCleanly(context.provider.id);
-      specProperties0 <- ResourceSerde.deserialize[ContainerSpec](container).liftTo[Future];
-      specProperties = specProperties0.copy(name=container.name);
-      newNumInstances <- if(specProperties.external_id.getOrElse("") == "") {     // pending or lost container, doing nothing
-        Future.successful(specProperties.num_instances)
-      }else {
-        scaleService(client, specProperties, context, numInstances).liftTo[Future] map { _ => numInstances}
+    cleanly(context.provider.id) { client =>
+      for(
+        specProperties0 <- ResourceSerde.deserialize[ContainerSpec](container).liftTo[Future];
+        specProperties = specProperties0.copy(name=container.name);
+        newNumInstances <- if(specProperties.external_id.getOrElse("") == "") {     // pending or lost container, doing nothing
+          Future.successful(specProperties.num_instances)
+        }else {
+          scaleService(client, specProperties, context, numInstances).liftTo[Future] map { _ => numInstances}
+        }
+      ) yield {
+        val values = Map(
+          "num_instances" -> s"${newNumInstances}"
+        )
+        container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
       }
-    ) yield {
-      val values = Map(
-        "num_instances" -> s"${newNumInstances}"
-      )
-      container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
     }
   }
 
