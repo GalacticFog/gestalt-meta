@@ -36,14 +36,14 @@ object KubernetesProviderProperties {
     host_volume_whitelist: Seq[String] = Seq(),
     storage_classes: Seq[String] = Seq(),
     cpu_requirement_type: Set[RequestLimit] = Set(Request),
-    memory_requirement_type: Set[RequestLimit] = Set(Limit, Request)
+    memory_requirement_type: Set[RequestLimit] = Set(Limit, Request),
+    affinity: Option[Pod.Affinity] = None
     // formerly:
     // `cpu-requirement-type`: String = "request",
     // `memory-requirement-type`: String = "limit,request"
   )
   case class Properties(
-    config: Config = Config(),
-    affinity: Option[Pod.Affinity] = None
+    config: Config = Config()
   )
 
   object Implicits {

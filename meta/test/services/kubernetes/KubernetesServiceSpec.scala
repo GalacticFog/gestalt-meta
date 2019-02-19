@@ -62,9 +62,9 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
   sequential
 
-  def mockSvc(resourceVersion: String = "", clusterIP: String = "", name: String = "test-container"): skuber.Service = {
+  def mockSvc(resourceVersion: String = "", clusterIP: String = "", name: String = "test-container", namespace: String = ""): skuber.Service = {
     skuber.Service(
-      name = name
+      metadata = skuber.ObjectMeta(name = name, namespace = namespace)
     ).withClusterIP(clusterIP)
       .withResourceVersion(resourceVersion)
   }
@@ -150,7 +150,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
                                  secrets: Seq[ContainerSpec.SecretMount] = Seq.empty,
                                  volumes: Seq[ContainerSpec.VolumeMountSpec] = Seq.empty,
                                  health_checks: Seq[ContainerSpec.HealthCheck] = Seq.empty,
-                                 lb_address: Either[String,String] = Left("default-elb-address")
+                                 lb_address: Either[String,String] = Left("default-elb-address"),
+                                 num_instances: Int = 1
                                ) extends Scope {
 
     lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
@@ -195,7 +196,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       cpus = cpu,
       memory = memory,
       disk = 0.0,
-      num_instances = 1,
+      num_instances = num_instances,
       network = Some("default"),
       cmd = cmd,
       constraints = Seq(),
@@ -263,8 +264,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       case (pm,i) => (pm.name.getOrElse("") , pm.service_port.filter(_ != 0).getOrElse(32000+i))
     }) toMap
     lazy val mockService = skuber.Service(
-      name = metaContainer.name,
-      spec = skuber.Service.Spec(
+      metadata = skuber.ObjectMeta(name = metaContainer.name, namespace = s"${testEnv.id}"),
+      spec = Some(skuber.Service.Spec(
         clusterIP = "10.0.161.84",
         ports = port_mappings.filter(_.expose_endpoint.contains(true)).map(
           pm => skuber.Service.Port(
@@ -276,11 +277,11 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           )
         ).toList,
         _type = skuber.Service.Type.ClusterIP
-      )
+      ))
     ).addLabels(containerLbls)
     lazy val mockService2 = skuber.Service(
-      name = metaContainer.name+"-ext",
-      spec = skuber.Service.Spec(
+      metadata = skuber.ObjectMeta(name = metaContainer.name+"-ext", namespace = s"${testEnv.id}"),
+      spec = Some(skuber.Service.Spec(
         clusterIP = "10.0.161.84",
         ports = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("external","loadBalancer").contains)).map(
           pm => skuber.Service.Port(
@@ -292,10 +293,10 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           )
         ).toList,
         _type = skuber.Service.Type.NodePort
-      )
+      ))
     ).addLabels(containerLbls)
     lazy val mockService3 = skuber.Service(
-      metadata = skuber.ObjectMeta(name=metaContainer.name+"-lb"),
+      metadata = skuber.ObjectMeta(name=metaContainer.name+"-lb", namespace = s"${testEnv.id}"),
       spec = Some(skuber.Service.Spec(
         clusterIP = "10.0.161.85",
         ports = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.contains("loadBalancer")).map(
@@ -449,7 +450,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       mockSkuber.list()(any,meq(skuber.Secret.secListDef),any) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
       mockSkuber.listSelected(any)(any,meq(skuber.Secret.secListDef),any) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
 
-      mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef),any) returns Future.successful(skuber.ext.Deployment(metadata = skuber.ObjectMeta(name = metaContainer.name, namespace = s"${testEnv.id}")))
 
       mockSkuber.create(argThat( (_:Service).name == metaContainer.name        ))(any,meq(skuber.Service.svcDef),any) returns Future.successful(mockService)
       mockSkuber.create(argThat( (_:Service).name == metaContainer.name+"-ext" ))(any,meq(skuber.Service.svcDef),any) returns Future.successful(mockService2)
@@ -534,7 +535,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           "network" -> ""
         ))
       )
-      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(skuber.ext.Deployment(metadata = skuber.ObjectMeta(name = metaContainer.name, namespace = s"${testEnv.id}")))
       testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val Some(updatedContainerProps) = await(testSetup.svc.create(
@@ -575,7 +576,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           "network" -> ""
         ))
       )
-      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(skuber.ext.Deployment(metadata = skuber.ObjectMeta(name = metaContainer.name, namespace = s"${testEnv.id}")))
       testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val Some(updatedContainerProps) = await(testSetup.svc.create(
@@ -613,7 +614,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         container = metaContainer
       )).properties
 
-      there were two(testSetup.skuberFactory).initializeKube(meq(testProvider), any)(any)
+      there were one(testSetup.skuberFactory).initializeKube(meq(testProvider), meq("default"))(any)
+      there were one(testSetup.skuberFactory).initializeKube(meq(testProvider), meq(s"${testEnv.id}"))(any)
       there was one(testSetup.client).create(argThat(
         inNamespace(testSetup.testNS.name)
           and
@@ -924,15 +926,21 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         inNamespace(testSetup.testNS.name)
           and
           (((_:skuber.ext.Deployment).spec.get.template.get.spec.get.volumes) ^^ containTheSameElementsAs(Seq(
-            skuber.Volume("volume-1", skuber.Volume.PersistentVolumeClaimRef("volume-1", false)),
-            skuber.Volume("volume-2", skuber.Volume.PersistentVolumeClaimRef("volume-2", true)),
-            skuber.Volume("volume-3", skuber.Volume.PersistentVolumeClaimRef("volume-3", false))
+            // skuber.Volume("volume-1", skuber.Volume.PersistentVolumeClaimRef("volume-1", false)),
+            // skuber.Volume("volume-2", skuber.Volume.PersistentVolumeClaimRef("volume-2", true)),
+            // skuber.Volume("volume-3", skuber.Volume.PersistentVolumeClaimRef("volume-3", false))
+            skuber.Volume(s"volume-ex-${vol1.id}", skuber.Volume.PersistentVolumeClaimRef("volume-1", false)),
+            skuber.Volume(s"volume-ex-${vol2.id}", skuber.Volume.PersistentVolumeClaimRef("volume-2", true)),
+            skuber.Volume(s"volume-ex-${vol3.id}", skuber.Volume.PersistentVolumeClaimRef("volume-3", false))
           )))
           and
           (((_:skuber.ext.Deployment).spec.get.template.get.spec.get.containers.head.volumeMounts)) ^^ containTheSameElementsAs(Seq(
-            skuber.Volume.Mount("volume-1", "/mnt/path1", false),
-            skuber.Volume.Mount("volume-2", "/mnt/path2", true),
-            skuber.Volume.Mount("volume-3", "/mnt/path3", false)
+            // skuber.Volume.Mount("volume-1", "/mnt/path1", false),
+            // skuber.Volume.Mount("volume-2", "/mnt/path2", true),
+            // skuber.Volume.Mount("volume-3", "/mnt/path3", false)
+            skuber.Volume.Mount(s"volume-ex-${vol1.id}", "/mnt/path1", false),
+            skuber.Volume.Mount(s"volume-ex-${vol2.id}", "/mnt/path2", true),
+            skuber.Volume.Mount(s"volume-ex-${vol3.id}", "/mnt/path3", false)
           ))
       ))(any,meq(Deployment.deployDef),any)
     }
@@ -1053,6 +1061,31 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           KubernetesConstants.META_WORKSPACE_KEY -> testWork.id.toString,
           KubernetesConstants.META_FQON_KEY -> "root",
           KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
+        )
+      ))(any,meq(Deployment.deployDef),any)
+    }
+
+    "provision containers with the requested num of replicas" in new FakeKubeCreate(num_instances = 2) {
+      await(testSetup.svc.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+      there was one(testSetup.client).create(argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.replicas)) ^^ beSome(
+          2
+        )
+      ))(any,meq(Deployment.deployDef),any)
+    }
+    "provision containers with correct Deployment selector" in new FakeKubeCreate() {
+      await(testSetup.svc.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+      there was one(testSetup.client).create(argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.selector)) ^^ beSome(
+          skuber.LabelSelector(skuber.LabelSelector.IsEqualRequirement(
+            KubernetesConstants.META_CONTAINER_KEY, s"${metaContainer.id}"
+          ))
         )
       ))(any,meq(Deployment.deployDef),any)
     }
@@ -2135,14 +2168,14 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
       testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
       testSetup.client.create(argThat((_:Service).name == metaContainer.name))(any,meq(Service.svcDef),any) returns Future.successful({
-        mockSvc().setPorts(List(
+        mockSvc(namespace = s"${testEnv.id}").setPorts(List(
           skuber.Service.Port("web",    skuber.Protocol.TCP, 80,  Some(Left(80)),     0),
           skuber.Service.Port("api",    skuber.Protocol.TCP, 81,  Some(Left(81)),     0),
           skuber.Service.Port("secure", skuber.Protocol.TCP, 443, Some(Left(443)), 8443)
         )).withType(Service.Type.ClusterIP)
       })
       testSetup.client.create(argThat((_:Service).name == metaContainer.name + "-ext"))(any,meq(Service.svcDef),any) returns Future.successful({
-        mockSvc().setPorts(List(
+        mockSvc(namespace = s"${testEnv.id}").setPorts(List(
           skuber.Service.Port("api",    skuber.Protocol.TCP,  81, Some(Left(81)),  assignedNodePort81),
           skuber.Service.Port("secure", skuber.Protocol.TCP, 443, Some(Left(443)),               8443)
         )).withType(Service.Type.NodePort)
@@ -2334,6 +2367,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
+    section("now")
     "create service and ingress on container update" in new FakeKubeCreate(port_mappings = Seq(
       ContainerSpec.PortMapping(
         protocol = "tcp",
@@ -2388,6 +2422,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       )
       there were two(testSetup.client).close
     }
+    section("now")
   }
   section("connectivity")
 
@@ -2481,7 +2516,14 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
               volumes = List(),
               affinity = None,
               dnsPolicy = skuber.DNSPolicy.ClusterFirst,
-              restartPolicy = skuber.RestartPolicy.Never
+              restartPolicy = skuber.RestartPolicy.Never,
+              imagePullSecrets = List(
+                skuber.LocalObjectReference("imagepullsecret-1"),
+                skuber.LocalObjectReference("imagepullsecret-2"),
+                skuber.LocalObjectReference("imagepullsecret-3"),
+                skuber.LocalObjectReference("imagepullsecret-4"),
+                skuber.LocalObjectReference("imagepullsecret-5")
+              )
             ))
           ))
         ))
@@ -2604,7 +2646,14 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
               ),
               affinity = None,
               dnsPolicy = skuber.DNSPolicy.ClusterFirst,
-              restartPolicy = skuber.RestartPolicy.Never
+              restartPolicy = skuber.RestartPolicy.Never,
+              imagePullSecrets = List(
+                skuber.LocalObjectReference("imagepullsecret-1"),
+                skuber.LocalObjectReference("imagepullsecret-2"),
+                skuber.LocalObjectReference("imagepullsecret-3"),
+                skuber.LocalObjectReference("imagepullsecret-4"),
+                skuber.LocalObjectReference("imagepullsecret-5")
+              )
             ))
           ))
         ))
@@ -2710,7 +2759,14 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
               ),
               affinity = None,
               dnsPolicy = skuber.DNSPolicy.ClusterFirst,
-              restartPolicy = skuber.RestartPolicy.Never
+              restartPolicy = skuber.RestartPolicy.Never,
+              imagePullSecrets = List(
+                skuber.LocalObjectReference("imagepullsecret-1"),
+                skuber.LocalObjectReference("imagepullsecret-2"),
+                skuber.LocalObjectReference("imagepullsecret-3"),
+                skuber.LocalObjectReference("imagepullsecret-4"),
+                skuber.LocalObjectReference("imagepullsecret-5")
+              )
             ))
           ))
         ))
@@ -3472,7 +3528,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           "network" -> ""
         ))
       )
-      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      // testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment]))
       testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val Some(updatedContainerProps) = await(testSetup.svc.create(
@@ -3556,7 +3612,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           "network" -> ""
         ))
       )
-      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      // testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
       testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val affinity = affinityCfg.as[skuber.Pod.Affinity]
