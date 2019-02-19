@@ -162,6 +162,9 @@ class ContainerController @Inject()(
     ) yield {
       futureRes map { res =>
         Created(RenderSingle(res))
+      } recoverWith { case throwable: Throwable =>
+        throwable.printStackTrace()
+        Future.failed(throwable)
       }
     }) valueOr { error =>
       Future.successful(errorToResult(error))

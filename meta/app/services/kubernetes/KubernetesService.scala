@@ -2,7 +2,7 @@ package services.kubernetes
 
 import java.util.{TimeZone, UUID}
 
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.meta.api.ContainerStats.{ContainerStateStat, EventStat}
 import com.galacticfog.gestalt.meta.api.errors._
@@ -55,25 +55,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  private def composableCleanly(provider: GestaltResourceInstance, namespace: String) = {
-    new {
-      def map[T](f: RequestContext => T): Future[T] = {
-        skuberFactory.initializeKube(provider, namespace) map { kube =>
-          val t = f(kube)
-          kube.close
-          t
-        }
-      }
-      def flatMap[T](f: RequestContext => Future[T]): Future[T] = {
-        skuberFactory.initializeKube(provider, namespace) flatMap { kube =>
-          val fT = f(kube)
-          fT.onComplete(_ => kube.close)
-          fT
-        }
-      }
-    }
-  }
-
   private def mkLabels(context: ProviderContext): Map[String,String] = {
     Map(
       META_ENVIRONMENT_KEY -> context.environmentId.toString,
@@ -83,17 +64,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
-  private def getNamespaceForResource(resource: ResourceLike, resourceName: String): String = {
-    // why not attempt to take the namespace from external_id first?
-
-    val namespaceGetter = s"/namespaces/([^/]+)/${resourceName}/.*".r
+  private def getNamespaceForResource[T <: skuber.TypeMeta](resource: GestaltResourceInstance)(implicit rd: skuber.ResourceDefinition[T]): String = {
+    val namespaceGetter = s"/namespaces/([^/]+)/${rd.spec.names.plural}/.*".r
+    val externalId = ContainerService.resourceExternalId(resource)
     (for {
-      eid <- ContainerService.resourceExternalId(resource)
+      eid <- externalId
       ns <- eid match {
         case namespaceGetter(namespace) => Some(namespace)
         case _ => None
       }
     } yield ns) orElse {
+      log.warn(s"Failed to extract namespace from resource ${resource.id} with external_id=${externalId}; this is not meant to occur")
       ResourceFactory.findParent(ResourceIds.Environment, resource.id).map(_.id.toString)
     } getOrElse {
       throw new RuntimeException(s"Failed to obtain namespace for '${resource.id}' in Kubernetes: invalid external_id and missing parent environment.")
@@ -125,10 +106,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           ) ++ mkLabels(context)
         )
       );
-      kube <- composableCleanly(context.provider, namespace.name);
-      created <- kube.create[Secret](k8sSecret) recoverWith { case e: K8SException =>
-        e.printStackTrace()
-        Future.failed(new RuntimeException(s"Failed creating Secret '${spec.name}': " + e.status.message))
+      created <- cleanly(context.provider, namespace.name) { kube =>
+        kube.create[Secret](k8sSecret) recoverWith { case e: K8SException =>
+          e.printStackTrace()
+          Future.failed(new RuntimeException(s"Failed creating Secret '${spec.name}': " + e.status.message))
+        }
       }
     ) yield {
       val prunedItems = spec.items.map(_.copy(value=None))
@@ -162,7 +144,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     //   }
     // }
 
-    val namespace = getNamespaceForResource(secret, "secrets")
+    val namespace = getNamespaceForResource[skuber.Secret](secret)
 
     val targetLabel = META_SECRET_KEY -> secret.id.toString
     cleanly(provider, namespace) { kube =>
@@ -309,7 +291,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     //   }
     // }
 
-    val namespace = getNamespaceForResource(container, "deployments")
+    val namespace = getNamespaceForResource[skuber.ext.Deployment](container)
 
     val targetLabel = META_CONTAINER_KEY -> container.id.toString
     cleanly(provider, namespace) { kube =>
@@ -677,8 +659,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
     // shouldn't this attempt to take namespace from external_id ?
-    cleanly(context.provider, context.environmentId.toString) { kube =>
-      for {
+    val namespace = getNamespaceForResource[skuber.ext.Deployment](container)
+
+    cleanly(context.provider, namespace) { kube =>
+      for {    
         extantDepl <- kube.getOption[Deployment](container.name) flatMap {
           case Some(depl) => Future.successful(depl)
           case None => Future.failed(new RuntimeException(
@@ -741,16 +725,19 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           spec = Some(pvClaimRefNamespaceOptics.set(namespace.name)(pvSpec))
         )
       };
-      kube <- composableCleanly(context.provider, namespace.name);
-      _ <- (pvOpt map { pv =>
-        kube.create[PersistentVolume](pv) recoverWith { case e: K8SException =>
-          e.printStackTrace()
-          Future.failed(new RuntimeException(s"Failed creating PersistentVolume for volume '${metaResource.name}': " + e.status.message))
-        }
-      }).sequence;
-      createdPvc <- kube.create[PersistentVolumeClaim](pvc) recoverWith { case e: K8SException =>
-        e.printStackTrace()
-        Future.failed(new RuntimeException(s"Failed creating PersistentVolumeClaim for volume '${metaResource.name}': " + e.status.message))
+      createdPvc <- cleanly(context.provider, namespace.name) { kube =>
+        for(
+          _ <- (pvOpt map { pv =>
+            kube.create[PersistentVolume](pv) recoverWith { case e: K8SException =>
+              e.printStackTrace()
+              Future.failed(new RuntimeException(s"Failed creating PersistentVolume for volume '${metaResource.name}': " + e.status.message))
+            }
+          }).sequence;
+          createdPvc <- kube.create[PersistentVolumeClaim](pvc) recoverWith { case e: K8SException =>
+            e.printStackTrace()
+            Future.failed(new RuntimeException(s"Failed creating PersistentVolumeClaim for volume '${metaResource.name}': " + e.status.message))
+          }
+        ) yield createdPvc
       }
     ) yield {
       val externalId = Map(
@@ -786,7 +773,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       //   }
       // }
 
-      val namespace = getNamespaceForResource(volume, "persistentvolumeclaims")
+      val namespace = getNamespaceForResource[skuber.PersistentVolumeClaim](volume)
 
       val deletePVs = volume.properties.getOrElse(Map.empty).get("reclamation_policy").contains("delete_persistent_volume")
 
@@ -1087,43 +1074,45 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       setDeploymentNamespace = GenLens[skuber.ext.Deployment](_.metadata.namespace).set(namespace.name);
       setIngressNamespace = GenLens[skuber.ext.Ingress](_.metadata.namespace).set(namespace.name);
 
-
-      kube <- composableCleanly(context.provider, namespace.name);
-      fDeployment = kube.create[skuber.ext.Deployment](setDeploymentNamespace(deploymentSpec)) recoverWith { case e: K8SException =>
-        e.printStackTrace()
-        Future.failed(new RuntimeException(s"Failed creating Kubernetes Deployment for container '${metaResource.name}': ${e.status.message}"))
-      };
-      createService = { service: skuber.Service =>
-        kube.create[skuber.Service](setServiceNamespace(service)) recoverWith { case e: K8SException =>
+      updatedResource <- cleanly(context.provider, namespace.name) { kube =>
+        val fDeployment = kube.create[skuber.ext.Deployment](setDeploymentNamespace(deploymentSpec)) recoverWith { case e: K8SException =>
           e.printStackTrace()
-          Future.failed(new RuntimeException(s"Failed creating Kubernetes Service ${service.name} for container '${metaResource.name}': ${e.status.message}"))
+          Future.failed(new RuntimeException(s"Failed creating Kubernetes Deployment for container '${metaResource.name}': ${e.status.message}"))
         }
-      };
-      fClusterIpServiceOpt = clusterIpServiceSpecOpt.map(createService(_)).sequence;
-      fNodePortServiceOpt = nodePortServiceSpecOpt.map(createService(_)).sequence;
-      fLoadBalancerServiceOpt = loadBalancerServiceSpecOpt.map(createService(_)).sequence;
-      fIngressOpt = (ingressSpecOpt map { ingress =>
-        kube.create[skuber.ext.Ingress](setIngressNamespace(ingress)) recoverWith { case e: K8SException =>
-          e.printStackTrace()
-          Future.failed(new RuntimeException(s"Failed creating Kubernetes Ingress for container '${metaResource.name}': ${e.status.message}"))
+        val createService = { service: skuber.Service =>
+          kube.create[skuber.Service](setServiceNamespace(service)) recoverWith { case e: K8SException =>
+            e.printStackTrace()
+            Future.failed(new RuntimeException(s"Failed creating Kubernetes Service ${service.name} for container '${metaResource.name}': ${e.status.message}"))
+          }
         }
-      }).sequence;
-      deployment <- fDeployment;
-      clusterIpServiceOpt <- fClusterIpServiceOpt;
-      nodePortServiceOpt <- fNodePortServiceOpt;
-      loadBalancerServiceOpt <- fLoadBalancerServiceOpt;
-      _ <- fIngressOpt
-    ) yield {
-      val updatedPortMappings: Seq[ContainerSpec.PortMapping] = specProperties.port_mappings map { pm =>
-        updatePortMapping(pm, clusterIpServiceOpt, nodePortServiceOpt, loadBalancerServiceOpt)
+        val fClusterIpServiceOpt = clusterIpServiceSpecOpt.map(createService(_)).sequence
+        val fNodePortServiceOpt = nodePortServiceSpecOpt.map(createService(_)).sequence
+        val fLoadBalancerServiceOpt = loadBalancerServiceSpecOpt.map(createService(_)).sequence
+        val fIngressOpt = (ingressSpecOpt map { ingress =>
+          kube.create[skuber.ext.Ingress](setIngressNamespace(ingress)) recoverWith { case e: K8SException =>
+            e.printStackTrace()
+            Future.failed(new RuntimeException(s"Failed creating Kubernetes Ingress for container '${metaResource.name}': ${e.status.message}"))
+          }
+        }).sequence
+        for(
+          deployment <- fDeployment;
+          clusterIpServiceOpt <- fClusterIpServiceOpt;
+          nodePortServiceOpt <- fNodePortServiceOpt;
+          loadBalancerServiceOpt <- fLoadBalancerServiceOpt;
+          _ <- fIngressOpt
+        ) yield {
+          val updatedPortMappings: Seq[ContainerSpec.PortMapping] = specProperties.port_mappings map { pm =>
+            updatePortMapping(pm, clusterIpServiceOpt, nodePortServiceOpt, loadBalancerServiceOpt)
+          }
+          val extraProps = Map(
+            "external_id" -> s"/namespaces/${deployment.namespace}/deployments/${deployment.name}",
+            "status" -> "LAUNCHED",
+            "port_mappings" -> Json.stringify(Json.toJson(updatedPortMappings))
+          )
+          metaResource.copy(properties = Some((metaResource.properties getOrElse Map()) ++ extraProps))
+        }
       }
-      val extraProps = Map(
-        "external_id" -> s"/namespaces/${deployment.namespace}/deployments/${deployment.name}",
-        "status" -> "LAUNCHED",
-        "port_mappings" -> Json.stringify(Json.toJson(updatedPortMappings))
-      )
-      metaResource.copy(properties = Some((metaResource.properties getOrElse Map()) ++ extraProps))
-    }
+    ) yield updatedResource
   }
 
   private def updateDeployment(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
@@ -1160,55 +1149,57 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       (newDeployment, newClusterIpServiceOpt, newNodePortServiceOpt, newLoadBalancerServiceOpt, newIngressOpt) = skuberSpecs;
       // shouldn't this attempt to take namespace from external_id ?
       namespace  <- cleanly(context.provider, DefaultNamespace)( getNamespace(_, context, create = true) );
-      kube <- composableCleanly(context.provider, namespace.name);
-      
-      // fetching old kubernetes entities for this container
-      fGetServices = kube.listSelected[skuber.ServiceList](META_CONTAINER_KEY is s"${metaResource.id}").map(_.items);
-      fGetIngressOpt = kube.getOption[skuber.ext.Ingress](specProperties.name);
-      serviceTypeOptics = GenLens[skuber.Service](_.spec) composePrism some composeLens GenLens[skuber.Service.Spec](_._type);
-      services <- fGetServices;
-      oldClusterIpServiceOpt = services.find(serviceTypeOptics.getOption(_) == Some(skuber.Service.Type.ClusterIP));
-      oldNodePortServiceOpt = services.find(serviceTypeOptics.getOption(_) == Some(skuber.Service.Type.NodePort));
-      oldLoadBalancerServiceOpt = services.find(serviceTypeOptics.getOption(_) == Some(skuber.Service.Type.LoadBalancer));
-      oldIngressOpt <- fGetIngressOpt;
+      updatedResource <- cleanly(context.provider, namespace.name) { kube =>
+        // fetching old kubernetes entities for this container
+        val fGetServices = kube.listSelected[skuber.ServiceList](META_CONTAINER_KEY is s"${metaResource.id}").map(_.items)
+        val fGetIngressOpt = kube.getOption[skuber.ext.Ingress](specProperties.name)
+        val serviceTypeOptics = GenLens[skuber.Service](_.spec) composePrism some composeLens GenLens[skuber.Service.Spec](_._type)
+        for(
+          services <- fGetServices;
+          oldClusterIpServiceOpt = services.find(serviceTypeOptics.getOption(_) == Some(skuber.Service.Type.ClusterIP));
+          oldNodePortServiceOpt = services.find(serviceTypeOptics.getOption(_) == Some(skuber.Service.Type.NodePort));
+          oldLoadBalancerServiceOpt = services.find(serviceTypeOptics.getOption(_) == Some(skuber.Service.Type.LoadBalancer));
+          oldIngressOpt <- fGetIngressOpt;
 
-      // setting cluster ip and resource version to new Service spec – otherwise kubernetes will disallow updating the service
-      withClusterIp = { (o0: Option[skuber.Service], n0: Option[skuber.Service]) =>
-        val clusterIpOptics = GenLens[skuber.Service](_.spec) composePrism some composeLens GenLens[skuber.Service.Spec](_.clusterIP)
-        (o0, n0) match {
-          case(Some(o), Some(n)) => {
-            val n1 = n.withClusterIP(clusterIpOptics.getOption(o).getOrElse("")).withResourceVersion(o.resourceVersion)
-            (o0, Some(n1))
+          // setting cluster ip and resource version to new Service spec – otherwise kubernetes will disallow updating the service
+          withClusterIp = { (o0: Option[skuber.Service], n0: Option[skuber.Service]) =>
+            val clusterIpOptics = GenLens[skuber.Service](_.spec) composePrism some composeLens GenLens[skuber.Service.Spec](_.clusterIP)
+            (o0, n0) match {
+              case(Some(o), Some(n)) => {
+                val n1 = n.withClusterIP(clusterIpOptics.getOption(o).getOrElse("")).withResourceVersion(o.resourceVersion)
+                (o0, Some(n1))
+              }
+              case _ => (o0, n0)
+            }
+          };
+          // filling in namespace
+          setServiceOptNamespace = (some composeLens GenLens[skuber.Service](_.metadata.namespace)).set(namespace.name);
+          setDeploymentNamespace = GenLens[skuber.ext.Deployment](_.metadata.namespace).set(namespace.name);
+          setIngressOptNamespace = (some composeLens GenLens[skuber.ext.Ingress](_.metadata.namespace)).set(namespace.name);
+
+          fClusterIpServiceOpt = reconcile(kube, withClusterIp(oldClusterIpServiceOpt, setServiceOptNamespace(newClusterIpServiceOpt)));
+          fNodePortServiceOpt = reconcile(kube, withClusterIp(oldNodePortServiceOpt, setServiceOptNamespace(newNodePortServiceOpt)));
+          fLoadBalancerServiceOpt = reconcile(kube, withClusterIp(oldLoadBalancerServiceOpt, setServiceOptNamespace(newLoadBalancerServiceOpt)));
+          fIngressOpt = reconcile(kube, (oldIngressOpt, setIngressOptNamespace(newIngressOpt)));
+          fUpdateDeployment = kube.update[skuber.ext.Deployment](setDeploymentNamespace(newDeployment));
+          clusterIpServiceOpt <- fClusterIpServiceOpt;
+          nodePortServiceOpt <- fNodePortServiceOpt;
+          loadBalancerServiceOpt <- fLoadBalancerServiceOpt;
+          _ <- fIngressOpt;
+          deployment <- fUpdateDeployment
+        ) yield {
+          val updatedPortMappings: Seq[ContainerSpec.PortMapping] = specProperties.port_mappings map { pm =>
+            updatePortMapping(pm, clusterIpServiceOpt, nodePortServiceOpt, loadBalancerServiceOpt)
           }
-          case _ => (o0, n0)
+          val extraProps = Map(
+            "external_id" -> s"/namespaces/${deployment.namespace}/deployments/${deployment.name}",
+            "status" -> "LAUNCHED",
+            "port_mappings" -> Json.stringify(Json.toJson(updatedPortMappings))
+          )
+          metaResource.copy(properties = Some((metaResource.properties getOrElse Map()) ++ extraProps))
         }
-      };
-      // filling in namespace
-      setServiceOptNamespace = (some composeLens GenLens[skuber.Service](_.metadata.namespace)).set(namespace.name);
-      setDeploymentNamespace = GenLens[skuber.ext.Deployment](_.metadata.namespace).set(namespace.name);
-      setIngressOptNamespace = (some composeLens GenLens[skuber.ext.Ingress](_.metadata.namespace)).set(namespace.name);
-
-      fClusterIpServiceOpt = reconcile(kube, withClusterIp(oldClusterIpServiceOpt, setServiceOptNamespace(newClusterIpServiceOpt)));
-      fNodePortServiceOpt = reconcile(kube, withClusterIp(oldNodePortServiceOpt, setServiceOptNamespace(newNodePortServiceOpt)));
-      fLoadBalancerServiceOpt = reconcile(kube, withClusterIp(oldLoadBalancerServiceOpt, setServiceOptNamespace(newLoadBalancerServiceOpt)));
-      fIngressOpt = reconcile(kube, (oldIngressOpt, setIngressOptNamespace(newIngressOpt)));
-      fUpdateDeployment = kube.update[skuber.ext.Deployment](setDeploymentNamespace(newDeployment));
-      clusterIpServiceOpt <- fClusterIpServiceOpt;
-      nodePortServiceOpt <- fNodePortServiceOpt;
-      loadBalancerServiceOpt <- fLoadBalancerServiceOpt;
-      _ <- fIngressOpt;
-      deployment <- fUpdateDeployment
-    ) yield {
-      val updatedPortMappings: Seq[ContainerSpec.PortMapping] = specProperties.port_mappings map { pm =>
-        updatePortMapping(pm, clusterIpServiceOpt, nodePortServiceOpt, loadBalancerServiceOpt)
       }
-      val extraProps = Map(
-        "external_id" -> s"/namespaces/${deployment.namespace}/deployments/${deployment.name}",
-        "status" -> "LAUNCHED",
-        "port_mappings" -> Json.stringify(Json.toJson(updatedPortMappings))
-      )
-      metaResource.copy(properties = Some((metaResource.properties getOrElse Map()) ++ extraProps))
-    }
+    ) yield updatedResource
   }
 
   def createJob(context: ProviderContext, metaResource: Instance) (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
@@ -1277,7 +1268,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     
     val provider = ContainerService.containerProvider(job)
 
-    val namespace = getNamespaceForResource(job, "jobs")
+    val namespace = getNamespaceForResource[skuber.batch.Job](job)
 
     cleanly(provider, namespace) { kube =>
       for(

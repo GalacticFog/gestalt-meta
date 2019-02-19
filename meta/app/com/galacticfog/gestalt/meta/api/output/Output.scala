@@ -113,7 +113,7 @@ object Output {
       variables = jsonHstore(r.variables),
       tags = jsonArray(r.tags),
       auth = r.auth)       
-      println("*****RENDERING INPUT PROPERTIES*****")
+      // println("*****RENDERING INPUT PROPERTIES*****")
     // this renders the properties
     val renderedProps = renderInstancePropertiesInput(r.typeId, r.id, r.properties)
     Json.toJson(res.copy(

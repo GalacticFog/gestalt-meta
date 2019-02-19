@@ -14,7 +14,7 @@ import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.util.Error
 
 class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach {
-  override def beforeAll(): Unit = () //pristineDatabase()
+  override def beforeAll(): Unit = pristineDatabase()
 
   override def before: Unit = scalikejdbc.config.DBs.setupAll()
 

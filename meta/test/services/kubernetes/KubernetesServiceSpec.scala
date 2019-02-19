@@ -2367,6 +2367,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
+    section("now")
     "create service and ingress on container update" in new FakeKubeCreate(port_mappings = Seq(
       ContainerSpec.PortMapping(
         protocol = "tcp",
@@ -2421,6 +2422,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       )
       there were two(testSetup.client).close
     }
+    section("now")
   }
   section("connectivity")
 
