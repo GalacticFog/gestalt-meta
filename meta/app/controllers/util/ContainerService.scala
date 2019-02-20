@@ -71,8 +71,8 @@ object ContainerService {
 
   def caasObjectRequestOperations(action: String) = List(
     controllers.util.Authorize(action),
-    controllers.util.EventsPre(action),
     controllers.util.PolicyCheck(action),
+    controllers.util.EventsPre(action),
     controllers.util.EventsPost(action))
 
   def caasObjectRequestOptions(user: AuthAccountWithCreds,
@@ -528,52 +528,64 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     }
   }
 
+  
   def createContainer(context: ProviderContext,
                       user: AuthAccountWithCreds,
                       containerSpec: ContainerSpec,
                       userRequestedId: Option[UUID] = None): Future[GestaltResourceInstance] = {
 
+    log.debug("Entered ContainerService::createContainer()...")
+    
     import ContainerSpec.existingVMSFmt
-
+    
     val input = ContainerSpec.toResourcePrototype(containerSpec).copy(id = userRequestedId)
     val proto = resourceWithDefaults(context.workspace.orgId, input, user, None)
     val containerOps = caasObjectRequestOperations("container.create")
     // TODO: should also have provider.view for the selected provider, as well as (maybe) volume.create for inline volume creation
     val options = caasObjectRequestOptions(user, context.environmentId, proto, providerIdOpt = Some(context.providerId))
 
-    SafeRequest(containerOps, options) ProtectAsync { _ =>
-
-      val provider = caasProvider(containerSpec.provider.id)
-
-      for {
-        volMounts <- createInlineContainerVolumes(context, user, Right(containerSpec))
-        containerResourcePre = upsertProperties(
-          proto,
-          "provider" -> Json.obj(
-            "name" -> provider.name,
-            "id" -> provider.id,
-            "resource_type" -> TypeMethods.typeName(provider.typeId)
-          ).toString,
-          "volumes" -> Json.toJson(volMounts).toString
-        )
-        service <- Future.fromTryST {
-          log.debug("Retrieving CaaSService from ProviderManager")
-          providerManager.getProviderImpl(context.provider.typeId)
-        }
-        metaResource <- Future.fromTryST {
-          log.debug("Creating container resource in Meta")
-          CreateWithEntitlements(containerResourcePre.orgId, user, containerResourcePre, Some(context.environmentId))
-        }
-        _ = log.info("Meta container created: " + metaResource.id)
-        instanceWithUpdates <- {
-          log.info("Creating container in backend CaaS...")
-          service.create(context, metaResource)
-        }
-        updatedInstance <- Future.fromTryST(ResourceFactory.update(instanceWithUpdates, user.account.id))
-      } yield updatedInstance
+    SafeRequest(containerOps, options) ProtectAsync { state =>
+      
+      log.debug(s"Entering Meta function - testing returned state: $state")
+      
+      if (State.isPending(state)) {
+        
+        log.debug("ResourceState is 'pending' - generating TASK...")
+        val taskJson = TaskMethods.suppressionTaskJson()
+        Future.fromTry(TaskMethods.createSuppressionTask(context.workspace.orgId, user, taskJson, context.environmentId))
+        
+      } else {
+        val provider = caasProvider(containerSpec.provider.id)
+        for {
+          volMounts <- createInlineContainerVolumes(context, user, Right(containerSpec))
+          containerResourcePre = upsertProperties(
+            proto,
+            "provider" -> Json.obj(
+              "name" -> provider.name,
+              "id" -> provider.id,
+              "resource_type" -> TypeMethods.typeName(provider.typeId)
+            ).toString,
+            "volumes" -> Json.toJson(volMounts).toString
+          )
+          service <- Future.fromTryST {
+            log.debug("Retrieving CaaSService from ProviderManager")
+            providerManager.getProviderImpl(context.provider.typeId)
+          }
+          metaResource <- Future.fromTryST {
+            log.debug("Creating container resource in Meta")
+            CreateWithEntitlements(containerResourcePre.orgId, user, containerResourcePre, Some(context.environmentId))
+          }
+          _ = log.info("Meta container created: " + metaResource.id)
+          instanceWithUpdates <- {
+            log.info("Creating container in backend CaaS...")
+            service.create(context, metaResource)
+          }
+          updatedInstance <- Future.fromTryST(ResourceFactory.update(instanceWithUpdates, user.account.id))
+        } yield updatedInstance
+      }
     }
   }
-
+  
   def createSecret(context: ProviderContext, user: AuthAccountWithCreds, secretSpec: SecretSpec, userRequestedId: Option[UUID]): Future[Instance] = {
 
     val input = SecretSpec.toResourcePrototype(secretSpec).copy(id = userRequestedId)
