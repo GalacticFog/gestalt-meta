@@ -92,6 +92,7 @@ object LambdaSpec {
     implicit val linkedProviderFormat = Json.format[LinkedProvider]
     implicit val lambdaProviderPropertiesFormat = Json.format[LambdaProviderProperties]
 
+    implicit val gpuSupportFormat = Json.format[GPUSupport]
     implicit val inlineLambdaProviderFormat = Json.format[InlineLambdaProvider]
     implicit val laserLambdaPropertiesFormat = Json.format[LaserLambdaProperties]
     implicit val awsLambdaPropertiesFormat = Json.format[AWSLambdaProperties]

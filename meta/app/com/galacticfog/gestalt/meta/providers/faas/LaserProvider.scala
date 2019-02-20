@@ -217,7 +217,8 @@ object LaserProvider {
     public: Boolean,
     provider: Option[JsValue],
     artifactDescription: LaserArtifactDescription)
-  
+
+  import LambdaSpec.Implicits._
   implicit val laserArtifactDescriptionFormat: Format[LaserArtifactDescription] = Json.format[LaserArtifactDescription]
   implicit val laserLambdaFormat: Format[LaserLambda] = Json.format[LaserLambda]
 }
