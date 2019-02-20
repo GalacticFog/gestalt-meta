@@ -16,7 +16,7 @@ class AddTypePropertyMigration(targetType: UUID,
 
   protected val acc = new MessageAccumulator()
 
-  def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
+  def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue, JsValue] = {
 
     /*
      * Get a reference to the Resource Type you want to enhance...
