@@ -104,7 +104,7 @@ class LambdaController @Inject()(
       // };
       env <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Environment, resource.id),
        s"Parent environment for ${resource.id} not found").liftTo[Future];
-      _ <- Either.fromOption(EventMethods.findEffectiveEventRules(env.id, Some("lambda.migrate")),
+      _ <- Either.fromOption(EventMethods.findEffectiveEventRules(env.id, Some("lambda.migrate.pre")),
        "No migration policy found.").liftTo[Future];
       options = RequestOptions(
         request.identity,

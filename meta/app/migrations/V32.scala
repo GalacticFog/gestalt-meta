@@ -16,6 +16,8 @@ import scala.util.{Failure, Success, Try}
 /**
  * Add suppress flag to `/properties/match_actions` to Event
  * Change datatype of `rules.properties.match_actions` from 'string::list' to 'json::list'
+ * 
+ * Depends-On: V1 (Change Rule 'actions' to 'match_actions')
  */
 class V32 extends MetaMigration() {
   

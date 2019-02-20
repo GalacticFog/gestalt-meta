@@ -25,6 +25,34 @@ package object policy {
   val EmptyProperty = "NONE"
   val EmptyPropertySeq = "[\"NONE\"]"
 
+  implicit lazy val ruleMatchActionFormat = Json.format[RuleMatchAction]
+  case class RuleMatchAction(action: String, meta_function: Option[String])
+  object RuleMatchAction {
+
+    def seqFromString(sa: String): Try[Seq[RuleMatchAction]] = Try {
+      Json.parse(sa).validate[Seq[RuleMatchAction]] match {
+        case s: JsSuccess[Seq[RuleMatchAction]] => s.get
+        case e: JsError => {
+          log.error(s"Failed parsing 'rule.properties.match_actions'. found: ${sa}")
+          throw new RuntimeException("Failed parsing 'match_actions': " + JsError.toJson(e).toString())
+        }
+      }
+    }
+    
+    def seqFromResource(r: GestaltResourceInstance): Try[Seq[RuleMatchAction]] = {
+      for {
+        ps <- Try(r.properties.getOrElse {
+                throw new RuntimeException(s"Rule resource has no properties. This is a bug.")
+              })
+        ms <- Try(ps.getOrElse("match_actions",
+                throw new RuntimeException(s"Rule has no 'match_actions'. This is a bug.")
+              ))
+        rs <- RuleMatchAction.seqFromString(ms)
+      } yield rs
+    }    
+    
+  }
+  
   case class Predicate[+T](property: String, operator: String, value: T) {
     
     override def toString(): String = {
@@ -224,6 +252,7 @@ package object policy {
   }
 
   def effectiveRules(parentId: UUID, ruleType: Option[UUID] = None, matchActions: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
+
     val rules = for {
       p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
       r <- ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, p.id)
@@ -231,18 +260,32 @@ package object policy {
 
     DebugLogRules(parentId, rules)
 
-    def array(sa: String) = Json.parse(sa).validate[Seq[String]].get
     def matchAction(a: Seq[String], b: Seq[String]) = !(a intersect b).isEmpty
     def matchType(test: UUID) = (test == (ruleType getOrElse test))
-
+    def matchStringArray(r: GestaltResourceInstance): Try[Seq[String]] = {
+      for {
+        ps <- Try(r.properties.getOrElse {
+                throw new RuntimeException(s"RuleEvent resource has no properties. This is a bug.")
+              })
+        ms <- Try(ps.getOrElse("match_actions",
+                throw new RuntimeException(s"RuleEvent has no 'match_actions'. This is a bug.")
+              ))
+        rs <- RuleMatchAction.seqFromString(ms)
+        ma = rs.map(_.action)
+      } yield ma
+    }
+    
     if (matchActions.isEmpty) rules else {
-      rules filter { r =>
-        matchType(r.typeId) &&
-          matchAction(array(r.properties.get("match_actions")), matchActions)
+      rules.filter { r =>
+        val matchArray = for {
+          rs <- RuleMatchAction.seqFromResource(r)
+          ma = rs.map(_.action)
+        } yield ma
+        matchType(r.typeId) && matchAction(matchArray.get, matchActions)
       }
     }
   }
-
+  
   protected[policy] def propertyHandler(typeId: UUID): ResourceProperties = {
     typeId match {
       case ResourceIds.Environment => EnvironmentProperties

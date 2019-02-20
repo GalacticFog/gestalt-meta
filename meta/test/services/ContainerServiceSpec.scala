@@ -89,35 +89,35 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
 
   "findPromotionRule" should {
 
-    "find any container.promote.* rules that are within the given scope" >> {
+    "find any container.promote.pre rules that are within the given scope" >> {
       val org = newOrg(id = dummyRootOrgId)
       org must beSuccessfulTry
 
       val data = newDummyEnvironment(dummyRootOrgId)
 
-      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.promote")).isEmpty must beTrue
+      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.promote.pre")).isEmpty must beTrue
 
       val (_, rule) = createEventRule(data("environment"), data("lambda"), "container.promote.pre")
       ResourceFactory.findById(ResourceIds.RuleEvent, rule) must beSome
 
-      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.promote")) must beSome
+      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.promote.pre")) must beSome
     }
   }
 
   "findMigrationRule" should {
 
-    "find any container.migrate.* rules that are within the given scope" >> {
+    "find any container.migrate.pre rules that are within the given scope" >> {
       val org = newOrg(id = dummyRootOrgId)
       org must beSuccessfulTry
 
       val data = newDummyEnvironment(dummyRootOrgId)
 
-      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.migrate")).isEmpty must beTrue
+      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.migrate.pre")).isEmpty must beTrue
 
       val (_, rule) = createEventRule(data("environment"), data("lambda"), "container.migrate.pre")
       ResourceFactory.findById(ResourceIds.RuleEvent, rule) must beSome
 
-      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.migrate")) must beSome
+      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.migrate.pre")) must beSome
     }
   }
 

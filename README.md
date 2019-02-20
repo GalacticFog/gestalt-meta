@@ -46,6 +46,32 @@ Persistence service for Gestalt Framework Resources.
     export RABBIT_ROUTE="policy"
     export RABBIT_EXCHANGE="policy-exchange"
 
+## Event Rules - Function Suppression [alpha]
+*[This is not intended to provide full documentation on how to implement Policy in Meta - this note is just to document the 'function-suppression' capability we're working on]*
+
+For each of the standard CRUD events (on all resource types) there is a function in Meta to implement it. Function suppression enables you to disable, or bypass the default Meta function for a given action. Using `event rules` in policy it is possible to supply your own function (via lambda) to respond to any action, and execute either before, or instead of, the standard Meta function.
+
+Must be a `*.pre` event.
+
+Example rule suppressing the Meta function:
+
+    {
+        "name": "suppress-container-create",
+        "resource_type": "Gestalt::Resource::Rule::Event",
+        "properties": {
+            "match_actions": [
+                {
+                    "action": "container.create.pre",
+                    "meta_function": "suppress"
+                }
+            ],
+            "lambda": "b834de59-f546-46ae-b320-5381787a1a79"
+        }
+    }
+
+The relevant property here is `meta_function`. The only supported value at this time is `suppress`. The property may be ommitted which indicates you would like Meta to behave as usual.
+
+
 ## Meta Schema Migrations
 #### API
     POST /migrate

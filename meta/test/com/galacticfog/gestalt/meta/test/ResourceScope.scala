@@ -127,7 +127,8 @@ trait ResourceScope extends Scope with Mockito {
           new V30(),
           new V31(),
           new V32(),
-          new V33()
+          new V33(),
+          new V35()
         )
 
         val tries = migrations.map {
@@ -217,7 +218,7 @@ trait ResourceScope extends Scope with Mockito {
             name = uuid,
             parent = Option(policy.id),
             properties = Option(Map(
-                "match_actions"    -> Json.toJson(List(action)).toString,
+                "match_actions"    -> Json.toJson(List(Json.obj("action" -> action))).toString,
                 "defined_at" -> policy.id.toString,
                 "lambda" -> lambda.toString,
                 "parent"     -> policy.id.toString)))
@@ -225,7 +226,32 @@ trait ResourceScope extends Scope with Mockito {
     }
     output.get
   }
+
+  import play.api.libs.json._
   
+  def createEventPolicy(
+      parent: UUID,  
+      lambda: UUID,
+      matchActions: Seq[JsValue],
+      org: UUID = dummyRootOrgId) = {
+    
+    val output = createInstance(ResourceIds.Policy,
+        org = org,
+        name = uuid,
+        parent = Option(parent)).map { policy =>
+        val rule = createInstance(ResourceIds.RuleEvent,
+            org = org,
+            name = uuid,
+            parent = Option(policy.id),
+            properties = Option(Map(
+                "match_actions" -> Json.toJson(matchActions).toString,
+                "defined_at" -> policy.id.toString,
+                "lambda" -> lambda.toString,
+                "parent"     -> policy.id.toString)))
+        (policy.id, rule.get.id)
+    }
+    output.get
+  }    
   
   /*
   schema           : string        
