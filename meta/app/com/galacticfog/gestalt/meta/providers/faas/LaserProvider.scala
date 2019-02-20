@@ -166,7 +166,8 @@ class LaserProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) ex
           headers = properties.headers.getOrElse(Map()),
           isolate = properties.isolate,
           secrets = Some(properties.secrets.getOrElse(Seq()).map(Json.toJson(_).as[JsObject])),
-          computePathOverride = computePathOpt
+          computePathOverride = computePathOpt,
+          gpuSupportOpt = properties.gpu_support
         )
       )
     }
@@ -207,7 +208,8 @@ object LaserProvider {
     computePathOverride: Option[String] = None,
     secrets: Option[Seq[JsObject]] = None,
     preWarm: Option[Int] = None,
-    isolate: Option[Boolean] = None)
+    isolate: Option[Boolean] = None,
+    gpuSupportOpt: Option[GPUSupport])
 
   case class LaserLambda(
     id: Option[String], 

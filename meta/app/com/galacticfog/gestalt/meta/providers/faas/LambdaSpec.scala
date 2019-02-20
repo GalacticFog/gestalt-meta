@@ -33,6 +33,7 @@ case class InlineLambdaProvider(
   id: UUID,
   locations: Option[Seq[JsValue]]
 )
+case class GPUSupport(enabled: Boolean, count: Int, `type`: String)
 case class LaserLambdaProperties(
   public: Boolean,
   runtime: String,
@@ -53,7 +54,8 @@ case class LaserLambdaProperties(
   pre_warm: Option[Int],
   secrets: Option[Seq[ContainerSpec.SecretMount]],
   linked_providers: Option[Seq[LinkedProvider]],
-  isolate: Option[Boolean]
+  isolate: Option[Boolean],
+  gpu_support: Option[GPUSupport]
 )
 case class AWSLambdaProperties(
   public: Boolean,
