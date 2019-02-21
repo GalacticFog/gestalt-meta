@@ -330,7 +330,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
           }
       } yield x
     }
-    handleResultStatus(process, acc)
+    handleResultStatus(process)
   }  
   
   private[migrations] def createStreamProviderInstance(
