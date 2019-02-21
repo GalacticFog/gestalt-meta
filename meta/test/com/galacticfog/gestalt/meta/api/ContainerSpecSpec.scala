@@ -164,7 +164,8 @@ class ContainerSpecSpec extends Specification with MetaRepositoryOps with Before
           "volumes" -> Json.arr(),
           "labels" -> Json.obj(),
           "env" -> Json.obj(),
-          "secrets" -> Json.arr()
+          "secrets" -> Json.arr(),
+          "gpu_support" -> Json.obj("enabled" -> false, "count" -> 1, "type" -> "")
         )),
         None,
         None,
@@ -238,7 +239,8 @@ class ContainerSpecSpec extends Specification with MetaRepositoryOps with Before
             Json.obj("secret_id" -> "5b7ac1b7-25bb-458e-8ca3-b9ae09269f9d", "path" -> "/path", "secret_key" -> "key", "mount_type" -> "env"),
             Json.obj("secret_id" -> "761167cf-8910-43f0-9dad-17ae137ef035", "path" -> "/path", "secret_key" -> "key", "mount_type" -> "file"),
             Json.obj("secret_id" -> "73e5ddf2-9bd7-41fd-8679-ad4545495f30", "path" -> "/path", "mount_type" -> "directory")
-          )
+          ),
+          "gpu_support" -> Json.obj("enabled" -> false, "count" -> 1, "type" -> "")
         )),
         None,
         None,

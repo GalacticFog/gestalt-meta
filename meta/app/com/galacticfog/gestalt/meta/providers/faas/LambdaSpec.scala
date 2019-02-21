@@ -33,7 +33,6 @@ case class InlineLambdaProvider(
   id: UUID,
   locations: Option[Seq[JsValue]]
 )
-case class GPUSupport(enabled: Boolean, count: Int, `type`: String)
 case class LaserLambdaProperties(
   public: Boolean,
   runtime: String,
@@ -55,7 +54,7 @@ case class LaserLambdaProperties(
   secrets: Option[Seq[ContainerSpec.SecretMount]],
   linked_providers: Option[Seq[LinkedProvider]],
   isolate: Option[Boolean],
-  gpu_support: Option[GPUSupport]
+  gpu_support: Option[ContainerSpec.GPUSupport]
 )
 case class AWSLambdaProperties(
   public: Boolean,
@@ -92,7 +91,6 @@ object LambdaSpec {
     implicit val linkedProviderFormat = Json.format[LinkedProvider]
     implicit val lambdaProviderPropertiesFormat = Json.format[LambdaProviderProperties]
 
-    implicit val gpuSupportFormat = Json.format[GPUSupport]
     implicit val inlineLambdaProviderFormat = Json.format[InlineLambdaProvider]
     implicit val laserLambdaPropertiesFormat = Json.format[LaserLambdaProperties]
     implicit val awsLambdaPropertiesFormat = Json.format[AWSLambdaProperties]

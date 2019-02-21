@@ -16,6 +16,7 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.errors.ApiError
 import com.galacticfog.gestalt.meta.api.output.OrgCache
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
+import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.galacticfog.gestalt.util.Error
 import com.galacticfog.gestalt.util.EitherWithErrors._
@@ -209,7 +210,7 @@ object LaserProvider {
     secrets: Option[Seq[JsObject]] = None,
     preWarm: Option[Int] = None,
     isolate: Option[Boolean] = None,
-    gpuSupportOpt: Option[GPUSupport])
+    gpuSupportOpt: Option[ContainerSpec.GPUSupport])
 
   case class LaserLambda(
     id: Option[String], 
@@ -218,7 +219,6 @@ object LaserProvider {
     provider: Option[JsValue],
     artifactDescription: LaserArtifactDescription)
 
-  import LambdaSpec.Implicits._
   implicit val laserArtifactDescriptionFormat: Format[LaserArtifactDescription] = Json.format[LaserArtifactDescription]
   implicit val laserLambdaFormat: Format[LaserLambda] = Json.format[LaserLambda]
 }
