@@ -21,7 +21,7 @@ class V34 extends MetaMigration() {
   import V34._
   
   implicit val acc = new MessageAccumulator()
-    
+  
   def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {  
     acc push "Looking up 'root' org"
     ResourceFactory.findRootOrg match {
@@ -45,7 +45,7 @@ class V34 extends MetaMigration() {
         extend = Some(ResourceIds.Provider)
       ).withActionInfo(ActionInfo(
         prefix = "provider",
-        verbs = Seq("export")
+        verbs = Seq("export", "show")
       )).withApiInfo (
           TypeApiInfo(rest_name = "providers"
       )).withLineageInfo(LineageInfo(

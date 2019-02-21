@@ -37,7 +37,7 @@ case class Feature(override val args: String*) extends Operation(args) {
   private[this] val log = Logger(this.getClass)
   
   def proceed(opts: RequestOptions) = {
-    log.info("Checking license for feature: " + args(0))
+    log.debug(s"Checking License: Feature[${args.mkString(",")}]")
     val feature = s2f(args(0))
     
     if (GestaltLicense.instance.isFeatureActive(feature)) Continue
@@ -95,7 +95,6 @@ case class Authorize(override val args: String*) extends Operation(args) with Au
       case Success(_) => Continue
       case Failure(e) => Halt(e.getMessage)
     }
-
   }
 }
 
@@ -133,7 +132,6 @@ case class PolicyCheck(override val args: String*) extends Operation(args) {
     
     effectiveRules(policyOwner.id, Some(ResourceIds.RuleLimit), args) foreach { rule =>
       val decision = decideJson(user, (target getOrElse policyOwner), rule, None, opts)
-      
       if (decision.isLeft) {
         //val message = s"Failed Policy Assertion: ${predicateMessage(predicate)}. Rule: ${rule.id}"
         throw new ConflictException(decision.left.get)
@@ -157,17 +155,31 @@ trait EventMethodsTrait {
   private[this] val log = Logger(this.getClass)
   
   def findEffectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
-
+    
+    log.debug(s"findEffectiveEventRules(_, ${event})")
+    
     val rs = for {
       p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
       r <- ResourceFactory.findChildrenOfType(ResourceIds.RuleEvent, p.id)
     } yield r
 
-    val fs = if (event.isEmpty) rs else {
-      rs filter { _.properties.get("match_actions").contains(event.get) }
-    }
+    val matchingRules = if (event.isEmpty) rs 
+      else { 
+        rs.filter { r =>
+          val matchArray = for {
+              ss <- RuleMatchAction.seqFromResource(r)
+              ma = ss.map(_.action)
+            } yield ma
+          matchArray.get.contains(event.get)
+        }
+      }
+
     // TODO: This is temporary. Need a strategy for multiple matching rules.
-    if (fs.isEmpty) None else Some(fs(0))
+    if (matchingRules.isEmpty) {
+      log.debug("No effective event rules found. Nothing to publish")
+      None 
+    } else Some(matchingRules.head)
+    
   }
 
   /* DO NOT DELETE
@@ -179,9 +191,10 @@ trait EventMethodsTrait {
       r.properties.get("actions").contains(event.get)
     }
   }
+  
    * 
    */
-   
+
   def publishEvent( 
       actionName: String, 
       eventType: String,
@@ -192,56 +205,115 @@ trait EventMethodsTrait {
       val parentId = opts.data.fold(Option.empty[UUID]){ 
         x => x.get("parentId") map { UUID.fromString(_) }
       }
+
       val owner = (parentId getOrElse opts.policyOwner.get)
 
       log.debug("Selecting policy root...")
       ResourceFactory.findById(owner).fold {
         throw new RuntimeException("Could not determine policy owner from request-options.")
       }{ r => 
-        if (r.typeId == ResourceIds.Environment) {
-          log.debug(s"Policy root found. Environment : ${r.id}")
-          r.id
+        
+        if (Seq(ResourceIds.Org, ResourceIds.Workspace, ResourceIds.Environment).contains(r.typeId)) {
+          log.debug(s"Policy root found : ${r.id}")
+          r.id          
         } else {
           
           log.debug("Searching for ancestor Environment...")
-          val env = ResourceFactory.findAncestorsOfType(r.id, ResourceIds.Environment).lastOption getOrElse {
-            throw new RuntimeException("Could not find a parent environment")
+          
+          val env = ResourceFactory.findContainerTypeAncestors(r.id).lastOption.getOrElse {
+            throw new RuntimeException("Could not find policy owner.")
           }
-          log.debug(s"Policy root found. Environment : ${r.id}")
+          log.debug(s"Policy root found : ${r.id}")
           env.id
         }
       }
     }
     
-    log.debug(s"findEffectiveEventRules($target, $eventName)")
-    
     findEffectiveEventRules(target, Option(eventName)) match { 
       case None => {
-        log.debug("No effective event rules found. Nothing to publish")
+        log.info("No matching event rules found. Nothing to do.")
         Continue
       }
       case Some(rule) => {
-        
         val event = EventMessage.make(
               id       = UUID.randomUUID, 
               identity = opts.user.account.id, 
-              
-              /*resource = "http://dummy.href", // TODO: Add RequestOptions.host*/
-              
               event    = eventName, 
               action   = actionName, 
               rule     = rule, 
               payload  = opts.policyTarget)
+
+        val suppressMetaFunction: Boolean = isSuppressed(rule, eventName) match {
+          case Success(v) => v
+          case Failure(e) => {
+            log.error("Failure testing meta_function directive: ${e.getMessage}")
+            false
+          }
+        }
         
-        publishEvent(event, opts) match {
-          case Success(_) => Accepted
-          case Failure(e) => Halt(e.getMessage)
+        (for {
+          eventJson <- formatEventJson(event, opts)
+          response <- {
+            log.info(s"Publishing '${eventName}'")
+            eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), eventJson)
+          }
+        } yield response) match {
+          case Success(_) => {
+            log.info(s"Successfully published '${eventName}'")
+            if (suppressMetaFunction) {
+              log.debug("Meta function is suppressed.")
+              Accepted 
+            } else {
+              log.debug("Meta function is NOT suppressed.")
+              Continue
+            }
+          }
+          case Failure(e) => {
+            log.error(s"Failed publishing event '${eventName}': ${e.getMessage}")
+            Halt(e.getMessage)
+          }
         }
       }
     }  
   }  
   
+  private[controllers] def formatEventMessage(
+                              identity: UUID, 
+                              eventName: String, 
+                              actionName: String, 
+                              rule: GestaltResourceInstance, 
+                              payload: Option[GestaltResourceInstance],
+                              opts: RequestOptions) = {
+
+    val event = EventMessage.make(
+          id       = UUID.randomUUID, 
+          identity = opts.user.account.id, 
+          event    = eventName, 
+          action   = actionName, 
+          rule     = rule, 
+          payload  = opts.policyTarget)
   
+    formatEventJson(event, opts)      
+  }
+  
+  private[controllers] def formatEventJson(
+                              event: EventMessage, 
+                              opts: RequestOptions): Try[JsObject] = Try {
+    val json = event.toJson
+    opts.data.fold(json) { dat =>
+      val rule = (json \ "args" \ "rule").as[JsObject]
+      val payload = (json \ "args" \ "payload").as[JsObject]
+      val payloadPlus = dat.foldLeft[JsObject](payload)(
+        (p, kv) => p ++ Json.obj(kv._1 -> kv._2)
+      )
+      json ++ Json.obj(
+        "args" -> Json.obj(
+          "rule" -> rule,
+          "payload" -> payloadPlus
+        )
+      )
+    }    
+  }
   //
   // TODO: Clean this up once we know the message works!
   //
@@ -261,9 +333,30 @@ trait EventMethodsTrait {
         )
       )
     }
-    log.debug("Publishing event message:\n" + Json.prettyPrint(eventJson))
-    eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), eventJson/*event.toJson*/)
+    
+    log.debug("Publishing event message:\n" + Json.prettyPrint(eventJson))    
+    eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), eventJson)
   }
+  
+  
+  private[controllers] val SUPPRESS_META_FUNCTION = "suppress"
+  
+  /**
+   * Determine if the meta_function for a given event is 'suppressed'.
+   */
+  private[controllers] def isSuppressed(rule: GestaltResourceInstance, eventName: String): Try[Boolean] = {
+    for {
+      mas <- RuleMatchAction.seqFromResource(rule)
+      ma <- Try(mas.find(_.action == eventName))
+      suppressed = for {
+        mf <- ma
+        x  <- mf.meta_function
+        y = x.trim.toLowerCase
+        z = y == "suppress"
+      } yield z
+      
+    } yield suppressed.getOrElse(false)
+  }  
   
   def eventsClient(): AmqpClient
 }
@@ -282,7 +375,6 @@ case class EventsPre(override val args: String*) extends Operation(args) {
     log.debug(s"EventsPre[${args.mkString(",")}]")
     
     val user = opts.user
-    
     val actionName = args(0)
     val eventName = s"${actionName}.${EventType.Pre}"
     
@@ -294,14 +386,14 @@ case class EventsPre(override val args: String*) extends Operation(args) {
         s"Given policy-owner '${opts.policyOwner.get}' not found.")
     }
     
-    log.debug(s"Publishing PRE event: ${eventName}")
     EventMethods.publishEvent(actionName, EventType.Pre, opts) match {
-      case Success(_) => {
-        log.debug(s"Successfully published $eventName")
-        Continue
+      case Success(status) => {
+        log.info(s"Pre-event processing complete. Received status : $status")
+        status
       }
       case Failure(e) => {
         log.error(s"Failure publishing event: '$eventName' : ${e.getMessage}")
+        log.warn("Current strategy on publish failure is 'Continue'. Continuing...")
         Continue
       }
     }
@@ -320,8 +412,7 @@ case class EventsPost(override val args: String*) extends Operation(args) {
     log.debug("entered EventsPost.proceed()")
     val actionName = args(0)
     val eventName = s"${actionName}.${EventType.Post}"
-    
-    //log.debug("Publishing post event...")
+
     EventMethods.publishEvent(actionName, EventType.Post, opts) match {
       case Success(_) => Continue
       case Failure(e) => {
@@ -386,7 +477,7 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
           val res = options.policyTarget.get
           state.fold(res)(st => res.copy(state = st))
         }
-        f( resource ) -> None
+        f(resource) -> None
       }
       case Failure(error) => {
         HandleExceptions(error) -> Some(error)
@@ -407,7 +498,6 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
 
 
   def ExecuteAsyncT[T](f: GestaltResourceInstance => Future[T]): Future[T] = {
-
     @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {
       os match {
         case Nil => proceed
@@ -430,7 +520,7 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
           val res = options.policyTarget.get
           state.fold(res)(st => res.copy(state = st))
         }
-        f( resource )
+        f(resource)
       }
       case Failure(error) => Future.failed(error)
     }
@@ -469,7 +559,7 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
           val res = options.policyTarget.get
           state.fold(res)(st => res.copy(state = st))
         }
-        f( resource )
+        f(resource)
       }
       case Failure(error) => HandleExceptionsAsync(error) 
     }
@@ -504,7 +594,7 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
     val (beforeOps, afterOps) = sansPost(operations)
     
     val result = evaluate(beforeOps, Continue).toTry match {
-      case Success(state) => f( state )
+      case Success(state) => f(state)
       case Failure(error) => HandleExceptions(error) 
     }
     
@@ -538,7 +628,7 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
     val (beforeOps, afterOps) = sansPost(operations)
     
     val result = evaluate(beforeOps, Continue).toTry match {
-      case Success(state) => Success(f( state ))
+      case Success(state) => Success(f(state))
       case Failure(error) => Failure(error)
     }
     
@@ -554,7 +644,7 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
 
   
   def ProtectAsync[T](f: Option[UUID] => Future[T]): Future[T] = {
-
+    log.debug("Entered SafeRequest::ProtectAsync...")
     @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {
       os match {
         case Nil => proceed
@@ -575,7 +665,7 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
 
     for {
       result <- pre.toTry match {
-        case Success(state) => f( state )
+        case Success(state) => f(state)
         case Failure(error) => Future.failed(error)
       }
       _ = afterOps match {
@@ -587,7 +677,7 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
       }
     } yield result
   }
-
+  
   type OpList = List[Operation[Seq[String]]]
   
   def sansPost(ops: OpList): (OpList, Option[Operation[Seq[String]]]) = {

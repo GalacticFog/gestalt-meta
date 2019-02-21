@@ -12,6 +12,8 @@ import scala.util.{Either, Failure, Left, Right, Success}
 
 /**
  * Add `/properties/external_id` to ::CaasProvider 
+ * 
+ * Depends-On: V13 (Create Volume Resource Type)
  */
 class V26 extends MetaMigration() {
 
