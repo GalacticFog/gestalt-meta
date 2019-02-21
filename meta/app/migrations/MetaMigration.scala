@@ -3,6 +3,7 @@ package migrations
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.meta.api.sdk.ResourceStates
 import com.galacticfog.gestalt.data.bootstrap.{ActionInfo, SystemType, _}
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, GestaltResourceType, GestaltTypeProperty}
 import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory, session, _}
@@ -272,7 +273,7 @@ abstract class MetaMigration() {
           } yield newType
         }
       }
-    handleResultStatus(process, acc)
+    handleResultStatus(process)(acc)
   }
   
   
@@ -301,12 +302,45 @@ abstract class MetaMigration() {
       throw new ResourceNotFoundException(s"Resource Property '${propertyName}' not found on Type with ID '${typeId}'")
     }
   }
+
+  def idempotentAddPropertyToType(targetType: UUID, newPropertyName: String, dataType: UUID, requirementType: UUID)(implicit acc: MessageAccumulator): Try[Unit] = {
+    /*
+     * Get a reference to the Resource Type you want to enhance...
+     */
+    acc push s"Looking up $targetType Resource Type..."
+    val tpe = TypeFactory.findById(targetType).get
+
+    /*
+     * Check if the property already exists on the type...
+     */
+    val exists =
+      PropertyFactory.findByType(targetType).exists(_.name == newPropertyName)
+
+    for {
+      _ <- if (exists) {
+        acc push s"Property $newPropertyName already exists. Nothing to do."
+        Success(())
+      } else {
+        val newProperty = GestaltTypeProperty(
+          state = ResourceState.id(ResourceStates.Active),
+          orgId = tpe.orgId,
+          owner = tpe.owner,
+          name = newPropertyName,
+          appliesTo = tpe.id,
+          datatype = dataType,
+          requirementType = requirementType)
+
+        acc push s"Adding /properties/$newPropertyName to $targetType Type."
+        addPropertyTypeToResourceType(tpe, newProperty)(acc)
+      }
+    } yield ()
+  }
   
   
   /**
    * General method to handle the final result and message stack of a migration process.
    */
-  def handleResultStatus[A](result: Try[A], acc: MessageAccumulator): Either[JsValue,JsValue] = {
+  def handleResultStatus[A](result: Try[A])(implicit acc: MessageAccumulator): Either[JsValue,JsValue] = {
     result match {
       case Success(_) => {
         acc push "Meta update successful."

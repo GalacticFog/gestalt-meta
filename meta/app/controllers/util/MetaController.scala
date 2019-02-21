@@ -387,11 +387,21 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     }
   }
 
-  private[controllers] def newDefaultResource(org: UUID, tpe: UUID, parent: UUID, payload: JsValue)
-                                             (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]): Future[GestaltResourceInstance] = {
+  
+  private[controllers] def newDefaultResource(
+                            org: UUID, tpe: UUID, parent: UUID, payload: JsValue)
+                            (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]): Future[GestaltResourceInstance] = {
+      
     val json = transformPayload(tpe, org, parent, payload).get
     MetaCreateResource(org, tpe, parent, Some(json)).apply { resource =>
-      Future.fromTry(CreateWithEntitlements(org, request.identity, resource, Some(parent)))
+
+      if (State.isPending(resource.state)) {
+        log.debug("ResourceState is 'pending' - generating TASK...")
+        val taskJson = TaskMethods.suppressionTaskJson()
+        Future.fromTry(TaskMethods.createSuppressionTask(org, request.identity, taskJson, parent))
+      } else {
+        Future.fromTry(CreateWithEntitlements(org, request.identity, resource, Some(parent)))
+      }
     }
   }
 

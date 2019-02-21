@@ -95,7 +95,7 @@ class ContainerController @Inject()(
       gri <- eitherFromJsResult(modifiedRequestBody.validate[GestaltResourceInput]);
       ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
       parentLink = Json.toJson(toLink(environment, None));
-      rawProperties <- Either.fromOption(gri.properties, "Properties not set").liftTo[EitherError];
+      rawProperties <- Either.fromOption(gri.properties, Error.Default("Properties not set"));
       payload = gri.copy(
         id=gri.id.orElse(Some(UUID.randomUUID())),
         owner=gri.owner.orElse(Some(ownerLink)),
@@ -136,7 +136,7 @@ class ContainerController @Inject()(
 
     val action = request.getQueryString("action").getOrElse("create")
     (for(
-      org <- Either.fromOption(Resource.findFqon(fqon), "could not locate org resource after authentication").liftTo[EitherError];
+      org <- Either.fromOption(Resource.findFqon(fqon), Error.Default("could not locate org resource after authentication"));
       env <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, environment),
        Error.NotFound(notFoundMessage(ResourceIds.Environment, environment)));
       futureRes <- action match {
@@ -162,6 +162,9 @@ class ContainerController @Inject()(
     ) yield {
       futureRes map { res =>
         Created(RenderSingle(res))
+      } recoverWith { case throwable: Throwable =>
+        throwable.printStackTrace()
+        Future.failed(throwable)
       }
     }) valueOr { error =>
       Future.successful(errorToResult(error))
@@ -190,7 +193,7 @@ class ContainerController @Inject()(
 
     val action = request.getQueryString("action").getOrElse("create")
     (for(
-      org <- Either.fromOption(Resource.findFqon(fqon), "could not locate org resource after authentication").liftTo[EitherError];
+      org <- Either.fromOption(Resource.findFqon(fqon), Error.Default("could not locate org resource after authentication"));
       env <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, environment),
        Error.NotFound(notFoundMessage(ResourceIds.Environment, environment)));
       futureRes <- action match {
@@ -263,7 +266,7 @@ class ContainerController @Inject()(
 
     val action = request.getQueryString("action").getOrElse("create")
     (for(
-      org <- Either.fromOption(Resource.findFqon(fqon), "could not locate org resource after authentication").liftTo[EitherError];
+      org <- Either.fromOption(Resource.findFqon(fqon), Error.Default("could not locate org resource after authentication"));
       env <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, environment),
        Error.NotFound(notFoundMessage(ResourceIds.Environment, environment)));
       futureRes <- action match {
@@ -436,13 +439,14 @@ class ContainerController @Inject()(
   }
 
   def migrateContainer(fqon: String, id: UUID) = AsyncAuditedAny(fqon) { implicit request =>
+    val migrateAction = "container.migrate.pre"
     for(
       container <- Either.fromOption(ResourceFactory.findById(ResourceIds.Container, id),
        Error.NotFound(notFoundMessage(ResourceIds.Container, id))).liftTo[Future];
       environment <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Environment, container.id),
        s"could not find Environment parent for container ${container.id}").liftTo[Future];
-      _ <- Either.fromOption(EventMethods.findEffectiveEventRules(environment.id, Some("container.migrate")),
-       Error.Conflict("No promotion policy found for target environment.")).liftTo[Future];
+      _ <- Either.fromOption(EventMethods.findEffectiveEventRules(environment.id, Some(migrateAction)),
+           Error.Conflict(s"No migration rule found for target environment. Expected action: '${migrateAction}'")).liftTo[Future];
       // _ <- (if(container.properties.flatMap(_.get("status")) == Some("MIGRATING")) {
       //   Left(Error.Conflict(s"Container '$id' is already migrating. No changes made."))
       // }else {

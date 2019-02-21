@@ -1,20 +1,24 @@
-package services
+package services.ecs
 
 import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats,VolumeSpec}
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.integrations.ecs.{EcsClient,AwslogsConfiguration}
+import com.galacticfog.gestalt.util.ResourceSerde
+import com.galacticfog.gestalt.util.EitherWithErrors._
+import com.galacticfog.gestalt.util.Error
 import java.util.UUID
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 import scala.annotation.tailrec
-import cats.instances.vector._
-import cats.instances.try_._
 import cats.syntax.traverse._
+import cats.syntax.either._
+import cats.instances.vector._
+import cats.instances.either._
 import play.api.Logger
 import play.api.libs.json._
 import org.joda.time.DateTime
 import com.amazonaws.services.ecs.model._
+import services.ProviderContext
 
-// I would gladly move it to integrations as soon as ContainerSpec, VolumeSpec etc is moved to meta sdk/repositry
 trait ECSOps {
   import scala.collection.JavaConversions._
 
@@ -22,38 +26,32 @@ trait ECSOps {
 
   private[this] val sidecarContainer = "gesalt-ecs-sidecar-lb-agent"
 
-  def listContainerInstances(client: EcsClient): Try[Seq[String]] = {
+  def listContainerInstances(client: EcsClient): EitherError[Seq[String]] = {
     @tailrec
-    def iter(nextToken: Option[String] = None, containerInstances: Seq[String] = Seq()): Try[Seq[String]] = {
+    def iter(nextToken: Option[String] = None, containerInstances: Seq[String] = Seq()): EitherError[Seq[String]] = {
       val lcir = new ListContainerInstancesRequest()
         .withCluster(client.cluster)
 
       nextToken.foreach(lcir.setNextToken(_))
 
-      val res = Try(client.client.listContainerInstances(lcir)) map { res =>
+      val res = eitherFromTry(Try(client.client.listContainerInstances(lcir))) map { res =>
         (Option(res.getNextToken()), res.getContainerInstanceArns())
       }
       res match {
-        case Success((None, moreContainerInstances)) => Success(containerInstances ++ moreContainerInstances)
-        case Success((nextToken, moreContainerInstances)) => iter(nextToken, containerInstances ++ moreContainerInstances)
-        case Failure(throwable) => Failure(throwable)
+        case Right((None, moreContainerInstances)) => Right(containerInstances ++ moreContainerInstances)
+        case Right((nextToken, moreContainerInstances)) => iter(nextToken, containerInstances ++ moreContainerInstances)
+        case Left(error) => Left(error)
       }
     }
     iter()
   }
 
-  private[this] def failIfNot(condition: Boolean)(message: String): Try[Unit] = if(condition) {
-    Success(())
-  }else {
-    Failure(new RuntimeException(message))
-  }
-
-  def describeContainerInstances(client: EcsClient): Try[Seq[ContainerInstance]] = {
-    def describe(cis: Seq[String]): Try[Seq[ContainerInstance]] = {
+  def describeContainerInstances(client: EcsClient): EitherError[Seq[ContainerInstance]] = {
+    def describe(cis: Seq[String]): EitherError[Seq[ContainerInstance]] = {
       val dcir = new DescribeContainerInstancesRequest()
         .withCluster(client.cluster)
         .withContainerInstances(cis)
-      Try(client.client.describeContainerInstances(dcir)).map(_.getContainerInstances().toSeq)
+      eitherFromTry(Try(client.client.describeContainerInstances(dcir)).map(_.getContainerInstances().toSeq))
     }
     for(
       containerInstances <- listContainerInstances(client);
@@ -61,7 +59,7 @@ trait ECSOps {
     ) yield cis
   }
 
-  def createTaskDefinition(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Try[String] = {
+  def createTaskDefinition(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext): EitherError[String] = {
     // If using the Fargate launch type, this field is required and you must use one of the following values, which determines your range of supported values for the memory parameter:
     // 256 (.25 vCPU) - Available memory values: 512 (0.5 GB), 1024 (1 GB), 2048 (2 GB)
     // 512 (.5 vCPU) - Available memory values: 1024 (1 GB), 2048 (2 GB), 3072 (3 GB), 4096 (4 GB)
@@ -76,11 +74,19 @@ trait ECSOps {
         .withValue(value)
     }
 
-    def processHealthCheck(hc: ContainerSpec.HealthCheck): Try[HealthCheck] = {
+    def processHealthCheck(hc: ContainerSpec.HealthCheck): EitherError[HealthCheck] = {
       for(
-        _ <- failIfNot(hc.protocol == "COMMAND") { s"Invalid health check: unsupported protocol ${hc.protocol}; only COMMAND is supported" };
+        _ <- if(hc.protocol == "COMMAND") {
+          Right(())
+        }else {
+          Left(Error.Default(s"Invalid health check: unsupported protocol ${hc.protocol}; only COMMAND is supported"))
+        };
         command = hc.command.getOrElse("");
-        _ <- failIfNot(command != "") { s"Invalid health check: command must not be empty" }
+        _ <- if(command != "") {
+          Right(())
+        }else {
+          Left(Error.Default(s"Invalid health check: command must not be empty"))
+        }
       ) yield {
         new HealthCheck()
           .withCommand(command)
@@ -91,9 +97,13 @@ trait ECSOps {
       }
     }
 
-    val tryHealthCheck = for(
+    val eitherHealthCheck = for(
       hcs <- spec.health_checks.toVector.traverse(processHealthCheck);
-      _ <- failIfNot(hcs.size <= 1)("At most one health check is supported with Amazon ECS")
+      _ <- if(hcs.size <= 1) {
+        Right(())
+      }else {
+        Left(Error.Default("At most one health check is supported with Amazon ECS"))
+      }
     ) yield {
       if(hcs.size == 0) {
         None
@@ -102,20 +112,27 @@ trait ECSOps {
       }
     }
 
-    def processVolumeMount(mountSpec: ContainerSpec.VolumeMountSpec): Try[(MountPoint,Volume)] = {
+    def processVolumeMount(mountSpec: ContainerSpec.VolumeMountSpec): EitherError[(MountPoint,Volume)] = {
       for(
         pathAndVolumeId <- mountSpec match {
-          case ContainerSpec.ExistingVolumeMountSpec(path, volumeId) => Success((path, volumeId))
-          case other => Failure(new RuntimeException(s"Expecting an instance of ContainerSpec.ExistingVolumeMountSpec; got $other"))
+          case ContainerSpec.ExistingVolumeMountSpec(path, volumeId) => Right((path, volumeId))
+          case other => Left(Error.Default(s"Expecting an instance of ContainerSpec.ExistingVolumeMountSpec; got $other"))
         };
-        resource <- ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, pathAndVolumeId._2) match {
-          case Some(resource) => Success(resource)
-          case None => Failure(throw new RuntimeException(s"Unknown volume ${pathAndVolumeId._2}"))
+        resource <- eitherFrom[Error.Default].option(ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID,
+         pathAndVolumeId._2), s"Unknown volume ${pathAndVolumeId._2}");
+        volumeSpec0 <- ResourceSerde.deserialize[VolumeSpec](resource);
+        volumeSpec = volumeSpec0.copy(name=resource.name);
+        _ <- if(volumeSpec.`type` == VolumeSpec.HostPath) {
+          Right(())
+        }else {
+          Left(Error.Default(s"Unsupported volume type: ${volumeSpec.`type`}. Only hostPath is supported"))
         };
-        volumeSpec <- VolumeSpec.fromResourceInstance(resource);
-        _ <- failIfNot(volumeSpec.`type` == VolumeSpec.HostPath) { s"Unsupported volume type: ${volumeSpec.`type`}. Only hostPath is supported" };
-        _ <- failIfNot(volumeSpec.name != "") { s"Volume name must not be empty" };
-        hostPath <- Try((volumeSpec.config \ "host_path").as[String])
+        _ <- if(volumeSpec.name != "") {
+          Right(())
+        }else {
+          Left(Error.Default("Volume name must not be empty"))
+        };
+        hostPath <- eitherFromJsResult((volumeSpec.config \ "host_path").validate[String])
       ) yield {
         val volume = new Volume()
           .withHost(new HostVolumeProperties().withSourcePath(hostPath))
@@ -127,21 +144,25 @@ trait ECSOps {
       }
     }
 
-    val tryVolumes = spec.volumes.toVector.traverse(processVolumeMount)
+    val eitherVolumes = spec.volumes.toVector.traverse(processVolumeMount)
 
-    def processPortMapping(pm: ContainerSpec.PortMapping): Try[PortMapping] = {
+    def processPortMapping(pm: ContainerSpec.PortMapping): EitherError[PortMapping] = {
       // "If using containers in a task with the awsvpc or host network mode, exposed ports should be specified using containerPort"
       // "If using containers in a task with the awsvpc or host network mode, the hostPort can either be left blank or set to the same value as the containerPort."
       // val protocol = pm.protocol.toLowerCase()
       for(
         // _ <- failIfNot(Seq("tcp", "udp").contains(protocol)) { s"Invalid port mapping protocol: ${pm.protocol}; only tcp or udp are supported" };
-        _ <- failIfNot(!pm.container_port.isEmpty) { "Invalid port mapping: container port cannot be empty" }
+        _ <- if(!pm.container_port.isEmpty) {
+          Right(())
+        }else {
+          Left(Error.Default("Invalid port mapping: container port cannot be empty"))
+        }
       ) yield {
         new PortMapping().withProtocol("tcp").withContainerPort(pm.container_port.get)
       }
     }
 
-    val tryPortMappings = spec.port_mappings.toVector.traverse(processPortMapping)
+    val eitherPortMappings = spec.port_mappings.toVector.traverse(processPortMapping)
 
     val logConfiguration = ecs.loggingConfiguration match {
       case Some(AwslogsConfiguration(groupName, region)) => {
@@ -186,9 +207,9 @@ trait ECSOps {
 
     if(!env.isEmpty) { cd.setEnvironment(env) }
     if(!spec.labels.isEmpty) { cd.setDockerLabels(spec.labels) }
-    tryPortMappings.foreach { portMappings => cd.setPortMappings(portMappings) }
+    eitherPortMappings.foreach { portMappings => cd.setPortMappings(portMappings) }
 
-    tryVolumes.foreach { pairs =>
+    eitherVolumes.foreach { pairs =>
       val mountPoints = pairs.map(_._1)
       cd.setMountPoints(mountPoints)
     }
@@ -202,22 +223,23 @@ trait ECSOps {
 
     // however the default ui only allows to specify `command` (in docker sense)
     // I expect this format: ["nginx", "-g", "daemon off;"]    (can't see any other viable option tbh)
-    val tryCmd = spec.cmd match {
+    val eitherCmd = spec.cmd match {
       case Some(args) => {
         (for(
-          argsJs <- Try(Json.parse(args));
-          splitArgs <- Try(argsJs.as[Seq[String]])
+          argsJs <- eitherFromTry(Try(Json.parse(args)));
+          splitArgs <- eitherFromJsResult(argsJs.validate[Seq[String]])
         ) yield splitArgs) map { sargs =>
           cd.setCommand(sargs.toSeq)
-        } recoverWith { case _: Throwable =>
-          Failure(new RuntimeException(s"""Failed to parse command, please use this format: `["nginx", "-g", "daemon off;"]`"""))
+        } match {
+          case Right(v) => Right(v)
+          case Left(_) => Left(Error.Default(s"""Failed to parse command, please use this format: `["nginx", "-g", "daemon off;"]`"""))
         }
       }
-      case None => Success(Seq())
+      case None => Right(Seq())
     }
     
     for(
-      hcOpt <- tryHealthCheck;
+      hcOpt <- eitherHealthCheck;
       hc <- hcOpt
     ) { cd.setHealthCheck(hc) }
 
@@ -232,7 +254,7 @@ trait ECSOps {
       .withCpu(cpus.toString)
       .withRequiresCompatibilities(ecs.launchType)
 
-    tryVolumes.foreach { pairs =>
+    eitherVolumes.foreach { pairs =>
       val volumes = pairs.map(_._2)
       rtdr.setVolumes(volumes)
     }
@@ -248,18 +270,18 @@ trait ECSOps {
       rtdr.setExecutionRoleArn(taskRoleArn)
     }
     for(
-      _ <- tryPortMappings;
-      _ <- tryHealthCheck;
-      _ <- tryVolumes;
-      _ <- tryCmd;
-      result <- Try(ecs.client.registerTaskDefinition(rtdr))
+      _ <- eitherPortMappings;
+      _ <- eitherHealthCheck;
+      _ <- eitherVolumes;
+      _ <- eitherCmd;
+      result <- eitherFromTry(Try(ecs.client.registerTaskDefinition(rtdr)))
     ) yield {
       val taskDefn = result.getTaskDefinition()
       s"${taskDefn.getFamily()}:${taskDefn.getRevision()}"
     }
   }
 
-  def createService(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Try[String] = {
+  def createService(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext): EitherError[String] = {
 
     val name = s"${context.environmentId}-${spec.name}"
 
@@ -278,10 +300,10 @@ trait ECSOps {
       csr.setNetworkConfiguration(nc)
     }
 
-    Try(ecs.client.createService(csr)).map(_.getService().getServiceArn())
+    eitherFromTry(Try(ecs.client.createService(csr))).map(_.getService().getServiceArn())
   }
 
-  def scaleService(client: EcsClient, spec: ContainerSpec, context: ProviderContext, numInstances: Int): Try[Unit] = {
+  def scaleService(client: EcsClient, spec: ContainerSpec, context: ProviderContext, numInstances: Int): EitherError[Unit] = {
     val externalId = spec.external_id.getOrElse("")
     val usr = new UpdateServiceRequest()
       .withCluster(client.cluster)
@@ -289,17 +311,17 @@ trait ECSOps {
       .withDesiredCount(numInstances)
     for(
       _ <- if(externalId == "") {
-        Failure(new RuntimeException(s"Cannot scale container with external_id=${externalId}"))
+        Left(Error.Default(s"Cannot scale container with external_id=${externalId}"))
       }else {
-        Success(())
+        Right(())
       };
-      _ <- Try(client.client.updateService(usr))
+      _ <- eitherFromTry(Try(client.client.updateService(usr)))
     ) yield ()
   }
 
   def describeServices(ecs: EcsClient, context: ProviderContext, lookupServiceArns: Seq[String] = Seq(),
-   paginationToken: Option[String] = None): Try[(Option[String],Seq[ContainerStats])] = {
-    def listServices(): Try[(Option[String],Seq[String])] = {
+   paginationToken: Option[String] = None): EitherError[(Option[String],Seq[ContainerStats])] = {
+    def listServices(): EitherError[(Option[String],Seq[String])] = {
       if(lookupServiceArns.isEmpty) {
         val lsr = new ListServicesRequest()
           .withCluster(ecs.cluster)
@@ -308,56 +330,56 @@ trait ECSOps {
           case None => lsr
           case Some(token) => lsr.withNextToken(token)
         }
-        Try(ecs.client.listServices(lsr)) map { response =>
+        eitherFromTry(Try(ecs.client.listServices(lsr))) map { response =>
           (Option(response.getNextToken()), response.getServiceArns())
         }
       }else if(lookupServiceArns.size > 10) {
-        Failure(throw new RuntimeException("Please pass no more than 10 service ARNs to describeServices"))
+        Left(Error.Default("Please pass no more than 10 service ARNs to describeServices"))
       }else {
-        Success((None, lookupServiceArns))
+        Right((None, lookupServiceArns))
       }
     }
 
-    def getStats(service: Service): Try[ContainerStats] = {
+    def getStats(service: Service): EitherError[ContainerStats] = {
       val dtdr = new DescribeTaskDefinitionRequest()
           .withTaskDefinition(service.getTaskDefinition())
       for(
-        describeResponse <- Try(ecs.client.describeTaskDefinition(dtdr));
+        describeResponse <- eitherFromTry(Try(ecs.client.describeTaskDefinition(dtdr)));
         taskDefn = describeResponse.getTaskDefinition();
         containerDefns: Seq[ContainerDefinition] = taskDefn.getContainerDefinitions();
         containerDefn <- (containerDefns filter { cd =>
           cd.getName() != sidecarContainer
         }) match {
-          case Seq(containerDefn: ContainerDefinition) => Success(containerDefn)
+          case Seq(containerDefn: ContainerDefinition) => Right(containerDefn)
           case containerDefns if containerDefns.isEmpty => {
-            Failure(throw new RuntimeException(s"Zero containers present on task definition `${taskDefn.getTaskDefinitionArn()}`; this is not supported"))
+            Left(Error.Default(s"Zero containers present on task definition `${taskDefn.getTaskDefinitionArn()}`; this is not supported"))
           }
           case _ => {
-            Failure(throw new RuntimeException(s"More than one container present on task definition `${taskDefn.getTaskDefinitionArn()}`; this is not supported"))
+            Left(Error.Default(s"More than one container present on task definition `${taskDefn.getTaskDefinitionArn()}`; this is not supported"))
           }
         };
         ltr = new ListTasksRequest()
           .withCluster(ecs.cluster)
           .withLaunchType(LaunchType.valueOf(ecs.launchType))
           .withServiceName(service.getServiceArn());
-        taskArns <- Try(ecs.client.listTasks(ltr)).map(_.getTaskArns().toSeq);
+        taskArns <- eitherFromTry(Try(ecs.client.listTasks(ltr)).map(_.getTaskArns().toSeq));
         tasks <- if(!taskArns.isEmpty) {
           val dtr = new DescribeTasksRequest()
             .withCluster(ecs.cluster)
             .withTasks(taskArns);
-          Try(ecs.client.describeTasks(dtr)).map(_.getTasks().toSeq);
-        }else { Success(Seq.empty[Task]) };    // tasks not yet spawned
+          eitherFromTry(Try(ecs.client.describeTasks(dtr))).map(_.getTasks().toSeq);
+        }else { Right(Seq.empty[Task]) };    // tasks not yet spawned
         containerInstanceArns = tasks map { r => Option(r.getContainerInstanceArn()) } collect { case Some(v) => v };
         containerInstances <- if(!containerInstanceArns.isEmpty) {
           val dcir = new DescribeContainerInstancesRequest()
             .withCluster(ecs.cluster)
             .withContainerInstances(containerInstanceArns)
-          Try(ecs.client.describeContainerInstances(dcir)).map(_.getContainerInstances().toSeq) map { containerInstances =>
+          eitherFromTry(Try(ecs.client.describeContainerInstances(dcir))).map(_.getContainerInstances().toSeq) map { containerInstances =>
             Map(containerInstances map { ci =>
               ci.getContainerInstanceArn() -> ci
             }: _*)
           }
-        }else { Success(Map.empty[String,ContainerInstance]) }
+        }else { Right(Map.empty[String,ContainerInstance]) }
       ) yield {
         val taskStats = for(
           task <- tasks;
@@ -387,7 +409,12 @@ trait ECSOps {
         ContainerStats(
           external_id = service.getServiceArn(),
           containerType = "DOCKER",
-          status = service.getStatus(),
+          // "The status of the service. The valid values are ACTIVE, DRAINING, or INACTIVE."
+          status = service.getStatus() match {
+            case "ACTIVE" => "RUNNING"
+            case "DRAINING" => "RUNNING"
+            case "INACTIVE" => "STOPPED"
+          },
           cpus = cpus.toDouble / 1024,
           memory = memory.toDouble,
           image = containerDefn.getImage(),
@@ -404,11 +431,12 @@ trait ECSOps {
     }
 
     for(
-      (nextToken, serviceArns) <- listServices();
+      services <- listServices();
+      (nextToken, serviceArns) = services;
       dsr = new DescribeServicesRequest()
         .withCluster(ecs.cluster)
         .withServices(serviceArns);
-      describeResponse <- Try(ecs.client.describeServices(dsr));
+      describeResponse <- eitherFromTry(Try(ecs.client.describeServices(dsr)));
       _ = describeResponse.getFailures() foreach { failure =>
         log.error(s"Failure during a DescribeServicesRequest: `failure.getArn()` (`failure.getReason()`)")
       };
@@ -418,7 +446,7 @@ trait ECSOps {
     }
   }
 
-  def deleteService(ecs: EcsClient, serviceArn: String): Try[Unit] = {
+  def deleteService(ecs: EcsClient, serviceArn: String): EitherError[Unit] = {
     val decribesr = new DescribeServicesRequest()
       .withCluster(ecs.cluster)
       .withServices(serviceArn)
@@ -430,19 +458,19 @@ trait ECSOps {
       .withCluster(ecs.cluster)
       .withService(serviceArn)
     for(
-      response <- Try(ecs.client.describeServices(decribesr));
+      response <- eitherFromTry(Try(ecs.client.describeServices(decribesr)));
       _ = response.getFailures() foreach { failure =>
         log.error(s"Failure during a DescribeServicesRequest: `failure.getArn()` (`failure.getReason()`)")
       };
       Seq(service) = response.getServices().toSeq;
-      _ <- if(service.getLaunchType() == ecs.launchType) { Success(()) }else {
-        Failure(throw new RuntimeException(s"The service `${serviceArn}` belongs to `${service.getLaunchType()}` launch type; this provider is configured to use `${ecs.launchType}`"))
+      _ <- if(service.getLaunchType() == ecs.launchType) { Right(()) }else {
+        Left(Error.Default(s"The service `${serviceArn}` belongs to `${service.getLaunchType()}` launch type; this provider is configured to use `${ecs.launchType}`"))
       };
       taskDefnArn = service.getTaskDefinition();
-      _ <- Try(ecs.client.updateService(usr));
-      _ <- Try(ecs.client.deleteService(deletesr));
+      _ <- eitherFromTry(Try(ecs.client.updateService(usr)));
+      _ <- eitherFromTry(Try(ecs.client.deleteService(deletesr)));
       dtdr = new DeregisterTaskDefinitionRequest().withTaskDefinition(taskDefnArn);
-      _ <- Try(ecs.client.deregisterTaskDefinition(dtdr))
+      _ <- eitherFromTry(Try(ecs.client.deregisterTaskDefinition(dtdr)))
     ) yield ()
   }
 }

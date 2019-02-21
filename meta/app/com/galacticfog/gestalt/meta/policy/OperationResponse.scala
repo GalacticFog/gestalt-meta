@@ -26,10 +26,10 @@ case object Continue extends OperationResponse[Option[UUID]] {
 case object Accepted extends OperationResponse[Option[UUID]] {
   def isContinue(): Boolean = true
   def isHalt(): Boolean = false
-  //
-  // TODO: Change this to ResourceStates.Pending once implemented
-  //
-  def toTry() = Try(Option(ResourceState.id(ResourceStates.Active)))
+  def toTry() = {
+    val pending = ResourceState.id(ResourceStates.Pending)
+    Try(Option(pending))
+  }
 }
 
 case class Halt(reason: String) extends OperationResponse[Option[UUID]] {

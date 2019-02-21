@@ -52,7 +52,7 @@ class V31  extends MetaMigration {
       _ <- addPropertyTypeToResourceType(baseResource, parentProperty)
     } yield ()
     
-    handleResultStatus(process, acc)
+    handleResultStatus(process)
   }
 
 }

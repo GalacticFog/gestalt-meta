@@ -2,7 +2,7 @@ package modules
 
 import com.google.inject.AbstractModule
 import net.codingwell.scalaguice.ScalaModule
-import services.{DefaultAwsSdkFactory, AwsSdkFactory}
+import services.ecs.{DefaultAwsSdkFactory, AwsSdkFactory}
 
 class MetaDefaultAwsSdk extends AbstractModule with ScalaModule {
 

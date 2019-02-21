@@ -62,9 +62,9 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
   sequential
 
-  def mockSvc(resourceVersion: String = "", clusterIP: String = "", name: String = "test-container"): skuber.Service = {
+  def mockSvc(resourceVersion: String = "", clusterIP: String = "", name: String = "test-container", namespace: String = ""): skuber.Service = {
     skuber.Service(
-      name = name
+      metadata = skuber.ObjectMeta(name = name, namespace = namespace)
     ).withClusterIP(clusterIP)
       .withResourceVersion(resourceVersion)
   }
@@ -150,7 +150,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
                                  secrets: Seq[ContainerSpec.SecretMount] = Seq.empty,
                                  volumes: Seq[ContainerSpec.VolumeMountSpec] = Seq.empty,
                                  health_checks: Seq[ContainerSpec.HealthCheck] = Seq.empty,
-                                 lb_address: Either[String,String] = Left("default-elb-address")
+                                 lb_address: Either[String,String] = Left("default-elb-address"),
+                                 num_instances: Int = 1
                                ) extends Scope {
 
     lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
@@ -195,7 +196,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       cpus = cpu,
       memory = memory,
       disk = 0.0,
-      num_instances = 1,
+      num_instances = num_instances,
       network = Some("default"),
       cmd = cmd,
       constraints = Seq(),
@@ -263,8 +264,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       case (pm,i) => (pm.name.getOrElse("") , pm.service_port.filter(_ != 0).getOrElse(32000+i))
     }) toMap
     lazy val mockService = skuber.Service(
-      name = metaContainer.name,
-      spec = skuber.Service.Spec(
+      metadata = skuber.ObjectMeta(name = metaContainer.name, namespace = s"${testEnv.id}"),
+      spec = Some(skuber.Service.Spec(
         clusterIP = "10.0.161.84",
         ports = port_mappings.filter(_.expose_endpoint.contains(true)).map(
           pm => skuber.Service.Port(
@@ -276,11 +277,11 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           )
         ).toList,
         _type = skuber.Service.Type.ClusterIP
-      )
+      ))
     ).addLabels(containerLbls)
     lazy val mockService2 = skuber.Service(
-      name = metaContainer.name+"-ext",
-      spec = skuber.Service.Spec(
+      metadata = skuber.ObjectMeta(name = metaContainer.name+"-ext", namespace = s"${testEnv.id}"),
+      spec = Some(skuber.Service.Spec(
         clusterIP = "10.0.161.84",
         ports = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("external","loadBalancer").contains)).map(
           pm => skuber.Service.Port(
@@ -292,10 +293,10 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           )
         ).toList,
         _type = skuber.Service.Type.NodePort
-      )
+      ))
     ).addLabels(containerLbls)
     lazy val mockService3 = skuber.Service(
-      metadata = skuber.ObjectMeta(name=metaContainer.name+"-lb"),
+      metadata = skuber.ObjectMeta(name=metaContainer.name+"-lb", namespace = s"${testEnv.id}"),
       spec = Some(skuber.Service.Spec(
         clusterIP = "10.0.161.85",
         ports = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.contains("loadBalancer")).map(
@@ -449,7 +450,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       mockSkuber.list()(any,meq(skuber.Secret.secListDef),any) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
       mockSkuber.listSelected(any)(any,meq(skuber.Secret.secListDef),any) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
 
-      mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef),any) returns Future.successful(skuber.ext.Deployment(metadata = skuber.ObjectMeta(name = metaContainer.name, namespace = s"${testEnv.id}")))
 
       mockSkuber.create(argThat( (_:Service).name == metaContainer.name        ))(any,meq(skuber.Service.svcDef),any) returns Future.successful(mockService)
       mockSkuber.create(argThat( (_:Service).name == metaContainer.name+"-ext" ))(any,meq(skuber.Service.svcDef),any) returns Future.successful(mockService2)
@@ -500,14 +501,15 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
 
 
+  // run a single section:
+  // testOnly services.kubernetes.KubernetesServiceSpec -- include containers
 
 
 
 
 
 
-
-
+  section("containers")
   "KubernetesService: containers" should {
 
     "configure environment variables for containers" in new FakeKube {
@@ -533,7 +535,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           "network" -> ""
         ))
       )
-      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(skuber.ext.Deployment(metadata = skuber.ObjectMeta(name = metaContainer.name, namespace = s"${testEnv.id}")))
       testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val Some(updatedContainerProps) = await(testSetup.svc.create(
@@ -574,7 +576,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           "network" -> ""
         ))
       )
-      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(skuber.ext.Deployment(metadata = skuber.ObjectMeta(name = metaContainer.name, namespace = s"${testEnv.id}")))
       testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val Some(updatedContainerProps) = await(testSetup.svc.create(
@@ -612,7 +614,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         container = metaContainer
       )).properties
 
-      there were two(testSetup.skuberFactory).initializeKube(meq(testProvider), any)(any)
+      there were one(testSetup.skuberFactory).initializeKube(meq(testProvider), meq("default"))(any)
+      there were one(testSetup.skuberFactory).initializeKube(meq(testProvider), meq(s"${testEnv.id}"))(any)
       there was one(testSetup.client).create(argThat(
         inNamespace(testSetup.testNS.name)
           and
@@ -923,15 +926,21 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         inNamespace(testSetup.testNS.name)
           and
           (((_:skuber.ext.Deployment).spec.get.template.get.spec.get.volumes) ^^ containTheSameElementsAs(Seq(
-            skuber.Volume("volume-1", skuber.Volume.PersistentVolumeClaimRef("volume-1", false)),
-            skuber.Volume("volume-2", skuber.Volume.PersistentVolumeClaimRef("volume-2", true)),
-            skuber.Volume("volume-3", skuber.Volume.PersistentVolumeClaimRef("volume-3", false))
+            // skuber.Volume("volume-1", skuber.Volume.PersistentVolumeClaimRef("volume-1", false)),
+            // skuber.Volume("volume-2", skuber.Volume.PersistentVolumeClaimRef("volume-2", true)),
+            // skuber.Volume("volume-3", skuber.Volume.PersistentVolumeClaimRef("volume-3", false))
+            skuber.Volume(s"volume-ex-${vol1.id}", skuber.Volume.PersistentVolumeClaimRef("volume-1", false)),
+            skuber.Volume(s"volume-ex-${vol2.id}", skuber.Volume.PersistentVolumeClaimRef("volume-2", true)),
+            skuber.Volume(s"volume-ex-${vol3.id}", skuber.Volume.PersistentVolumeClaimRef("volume-3", false))
           )))
           and
           (((_:skuber.ext.Deployment).spec.get.template.get.spec.get.containers.head.volumeMounts)) ^^ containTheSameElementsAs(Seq(
-            skuber.Volume.Mount("volume-1", "/mnt/path1", false),
-            skuber.Volume.Mount("volume-2", "/mnt/path2", true),
-            skuber.Volume.Mount("volume-3", "/mnt/path3", false)
+            // skuber.Volume.Mount("volume-1", "/mnt/path1", false),
+            // skuber.Volume.Mount("volume-2", "/mnt/path2", true),
+            // skuber.Volume.Mount("volume-3", "/mnt/path3", false)
+            skuber.Volume.Mount(s"volume-ex-${vol1.id}", "/mnt/path1", false),
+            skuber.Volume.Mount(s"volume-ex-${vol2.id}", "/mnt/path2", true),
+            skuber.Volume.Mount(s"volume-ex-${vol3.id}", "/mnt/path3", false)
           ))
       ))(any,meq(Deployment.deployDef),any)
     }
@@ -947,21 +956,21 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
     }
 
     // fails to detect mock on listSelected for some reason
-    // "listInEnvironment must use external_id in the ContainerStats" in new FakeKubeCreate() {
-    //   val Some(updatedContainerProps) = await(testSetup.svc.create(
-    //     context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-    //     container = metaContainer
-    //   )).properties
+    "listInEnvironment must use external_id in the ContainerStats" in new FakeKubeCreate() {
+      val Some(updatedContainerProps) = await(testSetup.svc.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
 
-    //   val Seq(stat) = await(testSetup.svc.listInEnvironment(
-    //     context = ProviderContext(play.api.test.FakeRequest("GET", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
-    //   ))
+      val Seq(stat) = await(testSetup.svc.listInEnvironment(
+        context = ProviderContext(play.api.test.FakeRequest("GET", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
+      ))
 
-    //   val Some(externalId) = updatedContainerProps.get("external_id")
+      val Some(externalId) = updatedContainerProps.get("external_id")
 
-    //   stat.external_id must_== externalId
-    //   there were three(testSetup.client).close
-    // }
+      stat.external_id must_== externalId
+      there were three(testSetup.client).close
+    }.pendingUntilFixed("fails to detect mock on listSelected for some reason")
 
     "create container should use default namespace if there are no provider-env sibling containers" in new FakeKube() {
       val Success(anotherProvider) = createKubernetesProvider(testEnv.id, "another-provider")
@@ -1056,6 +1065,31 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       ))(any,meq(Deployment.deployDef),any)
     }
 
+    "provision containers with the requested num of replicas" in new FakeKubeCreate(num_instances = 2) {
+      await(testSetup.svc.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+      there was one(testSetup.client).create(argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.replicas)) ^^ beSome(
+          2
+        )
+      ))(any,meq(Deployment.deployDef),any)
+    }
+    "provision containers with correct Deployment selector" in new FakeKubeCreate() {
+      await(testSetup.svc.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+      there was one(testSetup.client).create(argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.selector)) ^^ beSome(
+          skuber.LabelSelector(skuber.LabelSelector.IsEqualRequirement(
+            KubernetesConstants.META_CONTAINER_KEY, s"${metaContainer.id}"
+          ))
+        )
+      ))(any,meq(Deployment.deployDef),any)
+    }
+
     "set PullPolicy Always when force_pull == true" in new FakeKubeCreate(force_pull = true) {
       val Some(updatedContainerProps) = await(testSetup.svc.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1069,7 +1103,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
-    "set PullPolicy Always when force_pull == false" in new FakeKubeCreate(force_pull = false) {
+    "set PullPolicy IfNotPresent when force_pull == false" in new FakeKubeCreate(force_pull = false) {
       val Some(updatedContainerProps) = await(testSetup.svc.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -1146,7 +1180,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
-    "provision cpu limit if specified (tight mode)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu-requirement-type" -> "request,limit")) {
+    "provision cpu limit if specified (tight mode)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu_requirement_type" -> Json.arr("request", "limit"))) {
       val Some(updatedContainerProps) = await(testSetup.svc.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -1160,7 +1194,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
-    "provision memory request-only if specified (noisy-neighbor)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("memory-requirement-type" -> "request")) {
+    "provision memory request-only if specified (noisy-neighbor)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("memory_requirement_type" -> Json.arr("request"))) {
       val Some(updatedContainerProps) = await(testSetup.svc.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -1174,7 +1208,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
-    "provision with no limits or resources if specified (wild-west)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu-requirement-type" -> "", "memory-requirement-type" -> "")) {
+    "provision with no limits or resources if specified (wild-west)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu_requirement_type" -> Json.arr(), "memory_requirement_type" -> Json.arr())) {
       val Some(updatedContainerProps) = await(testSetup.svc.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -1211,6 +1245,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
   }
+  section("containers")
 
 
 
@@ -1221,8 +1256,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
 
 
-
-
+  section("secrets")
   "KubernetesService: secrets" should {
 
     "provision secrets with the expected external_id property" in new FakeKubeCreate() {
@@ -1459,6 +1493,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       )) must throwA[BadRequestException]("secrets must have unique paths")
     }
   }
+  section("secrets")
 
 
 
@@ -1467,8 +1502,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
 
 
-
-
+  section("volumes")
   "KubernetesService: volumes, PVs, PVCs" should {
 
     "create volume should use namespace from provider-env sibling containers" in new FakeKube() {
@@ -1945,6 +1979,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
     }
   }
+  section("volumes")
 
 
 
@@ -1952,8 +1987,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
 
 
-
-
+  section("connectivity")
   "KubernetesService: connectivity" should {
 
     "orchestrate kube ingress for virtual hosts" in new FakeKubeCreate(port_mappings = Seq(
@@ -2134,14 +2168,14 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
       testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
       testSetup.client.create(argThat((_:Service).name == metaContainer.name))(any,meq(Service.svcDef),any) returns Future.successful({
-        mockSvc().setPorts(List(
+        mockSvc(namespace = s"${testEnv.id}").setPorts(List(
           skuber.Service.Port("web",    skuber.Protocol.TCP, 80,  Some(Left(80)),     0),
           skuber.Service.Port("api",    skuber.Protocol.TCP, 81,  Some(Left(81)),     0),
           skuber.Service.Port("secure", skuber.Protocol.TCP, 443, Some(Left(443)), 8443)
         )).withType(Service.Type.ClusterIP)
       })
       testSetup.client.create(argThat((_:Service).name == metaContainer.name + "-ext"))(any,meq(Service.svcDef),any) returns Future.successful({
-        mockSvc().setPorts(List(
+        mockSvc(namespace = s"${testEnv.id}").setPorts(List(
           skuber.Service.Port("api",    skuber.Protocol.TCP,  81, Some(Left(81)),  assignedNodePort81),
           skuber.Service.Port("secure", skuber.Protocol.TCP, 443, Some(Left(443)),               8443)
         )).withType(Service.Type.NodePort)
@@ -2333,6 +2367,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
+    section("now")
     "create service and ingress on container update" in new FakeKubeCreate(port_mappings = Seq(
       ContainerSpec.PortMapping(
         protocol = "tcp",
@@ -2387,7 +2422,9 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       )
       there were two(testSetup.client).close
     }
+    section("now")
   }
+  section("connectivity")
 
 
 
@@ -2399,38 +2436,441 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
 
 
+  section("jobs")
+  "KubernetesService: jobs" should {
+    "create job" in new FakeKube {
+      val Success(metaJob) = createInstance(
+        migrations.V33.JOB_TYPE_ID,
+        "test-job",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "false",
+          "port_mappings" -> "[]",
+          "env" -> Json.obj(
+            "VAR1" -> "VAL1",
+            "VAR2" -> "VAL2"
+          ).toString,
+          "network" -> ""
+        ))
+      )
+      val mockJob = mock[skuber.batch.Job]
+      mockJob.ns returns s"${testEnv.id}"
+      mockJob.name returns "job-name"
+      testSetup.client.create(any)(any,meq(skuber.batch.Job.jobDef),any) returns Future.successful(mockJob)
+      // testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+
+      val r = await(testSetup.svc.createJob(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/jobs"), testProvider.id, None),
+        metaResource = metaJob
+      ))
+
+      r.properties === Some(metaJob.properties.get ++ Map(
+        "status" -> "LAUNCHED",
+        "external_id" -> s"/namespaces/${testEnv.id}/jobs/job-name"
+      ))
+
+      val captor = ArgumentCaptor.forClass(classOf[skuber.batch.Job])
+      there were one(testSetup.client).create(captor.capture())(any,meq(skuber.batch.Job.jobDef),any)
+      val createdJob = captor.getValue()
+
+      createdJob === skuber.batch.Job(
+        metadata = skuber.ObjectMeta(
+          name = "test-job",
+          namespace = s"${testEnv.id}",
+          labels = Map(
+            KubernetesConstants.META_ENVIRONMENT_KEY -> s"${testEnv.id}",
+            KubernetesConstants.META_WORKSPACE_KEY -> s"${testWork.id}",
+            KubernetesConstants.META_FQON_KEY -> "root",
+            KubernetesConstants.META_PROVIDER_KEY -> s"${testProvider.id}",
+            KubernetesConstants.META_JOB_KEY -> s"${metaJob.id}"
+          )
+        ),
+        spec = Some(skuber.batch.Job.Spec(
+          template = Some(skuber.Pod.Template.Spec(
+            spec = Some(skuber.Pod.Spec(
+              containers = List(
+                skuber.Container(
+                  name = "test-job",
+                  image = "nginx:alpine",
+                  ports = List(),
+                  env = List(
+                    skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP")), 
+                    skuber.EnvVar("VAR1", skuber.EnvVar.StringValue("VAL1")),
+                    skuber.EnvVar("VAR2", skuber.EnvVar.StringValue("VAL2"))
+                  ),
+                  resources = Some(skuber.Resource.Requirements(
+                    limits = Map("memory" -> "768.000M"),
+                    requests = Map("cpu" -> "2.000", "memory" -> "768.000M")
+                  )),
+                  livenessProbe = None
+                )
+              ),
+              volumes = List(),
+              affinity = None,
+              dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+              restartPolicy = skuber.RestartPolicy.Never,
+              imagePullSecrets = List(
+                skuber.LocalObjectReference("imagepullsecret-1"),
+                skuber.LocalObjectReference("imagepullsecret-2"),
+                skuber.LocalObjectReference("imagepullsecret-3"),
+                skuber.LocalObjectReference("imagepullsecret-4"),
+                skuber.LocalObjectReference("imagepullsecret-5")
+              )
+            ))
+          ))
+        ))
+      )
+    }
+    "create job with secrets" in new FakeKubeCreate {
+      val Success(metaJob) = createInstance(
+        migrations.V33.JOB_TYPE_ID,
+        "test-job",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "false",
+          "port_mappings" -> "[]",
+          "env" -> "{}",
+          "network" -> "",
+          "secrets" -> Json.arr(
+            Json.obj(
+              "mount_type" -> "env",
+              "secret_id" -> s"${metaSecret.id}",
+              "path" -> "SOME_ENV_VAR",
+              "secret_key" -> "part-a"
+            ),
+            Json.obj(
+              "mount_type" -> "file",
+              "secret_id" -> s"${metaSecret.id}",
+              "path" -> "/mnt/secrets/files/file-a",
+              "secret_key" -> "part-a"
+            ),
+            Json.obj(
+              "mount_type" -> "file",
+              "secret_id" -> s"${metaSecret.id}",
+              "path" -> "/mnt/secrets/files/file-b",
+              "secret_key" -> "part-b"
+            ),
+            Json.obj(
+              "mount_type" -> "file",
+              "secret_id" -> s"${metaSecret.id}",
+              "path" -> "/mnt/secrets/files/sub/file-c",
+              "secret_key" -> "part-b"
+            ),
+            Json.obj(
+              "mount_type" -> "directory",
+              "secret_id" -> s"${metaSecret.id}",
+              "path" -> "/mnt/secrets/dir"
+            )
+          ).toString
+        ))
+      )
+      val mockJob = mock[skuber.batch.Job]
+      mockJob.ns returns s"${testEnv.id}"
+      mockJob.name returns "job-name"
+      testSetup.client.create(any)(any,meq(skuber.batch.Job.jobDef),any) returns Future.successful(mockJob)
+      // testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+
+      val r = await(testSetup.svc.createJob(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/jobs"), testProvider.id, None),
+        metaResource = metaJob
+      ))
+
+      r.properties === Some(metaJob.properties.get ++ Map(
+        "status" -> "LAUNCHED",
+        "external_id" -> s"/namespaces/${testEnv.id}/jobs/job-name"
+      ))
+
+      val captor = ArgumentCaptor.forClass(classOf[skuber.batch.Job])
+      there were one(testSetup.client).create(captor.capture())(any,meq(skuber.batch.Job.jobDef),any)
+      val createdJob = captor.getValue()
+
+      createdJob === skuber.batch.Job(
+        metadata = skuber.ObjectMeta(
+          name = "test-job",
+          namespace = s"${testEnv.id}",
+          labels = Map(
+            KubernetesConstants.META_ENVIRONMENT_KEY -> s"${testEnv.id}",
+            KubernetesConstants.META_WORKSPACE_KEY -> s"${testWork.id}",
+            KubernetesConstants.META_FQON_KEY -> "root",
+            KubernetesConstants.META_PROVIDER_KEY -> s"${testProvider.id}",
+            KubernetesConstants.META_JOB_KEY -> s"${metaJob.id}"
+          )
+        ),
+        spec = Some(skuber.batch.Job.Spec(
+          template = Some(skuber.Pod.Template.Spec(
+            spec = Some(skuber.Pod.Spec(
+              containers = List(
+                skuber.Container(
+                  name = "test-job",
+                  image = "nginx:alpine",
+                  ports = List(),
+                  env = List(
+                    skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP")),
+                    skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", s"${metaSecret.name}"))
+                  ),
+                  resources = Some(skuber.Resource.Requirements(
+                    limits = Map("memory" -> "768.000M"),
+                    requests = Map("cpu" -> "2.000", "memory" -> "768.000M")
+                  )),
+                  livenessProbe = None,
+                  volumeMounts = List(
+                    skuber.Volume.Mount(name = "dir-4", mountPath = "/mnt/secrets/dir", readOnly = true),
+                    skuber.Volume.Mount(name = "file-0", mountPath = "/mnt/secrets/files", readOnly = true)
+                  )
+                )
+              ),
+              volumes = List(
+                // these are not meant to be actual secret names, but secret ids in meta
+                skuber.Volume("dir-4", skuber.Volume.Secret(secretName = s"${metaSecret.name}")),
+                skuber.Volume("file-0", skuber.Volume.Secret(secretName = s"${metaSecret.name}", items = Some(List(
+                  skuber.Volume.KeyToPath("part-a","file-a"),
+                  skuber.Volume.KeyToPath("part-b","file-b"),
+                  skuber.Volume.KeyToPath("part-b","sub/file-c")
+                ))))
+              ),
+              affinity = None,
+              dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+              restartPolicy = skuber.RestartPolicy.Never,
+              imagePullSecrets = List(
+                skuber.LocalObjectReference("imagepullsecret-1"),
+                skuber.LocalObjectReference("imagepullsecret-2"),
+                skuber.LocalObjectReference("imagepullsecret-3"),
+                skuber.LocalObjectReference("imagepullsecret-4"),
+                skuber.LocalObjectReference("imagepullsecret-5")
+              )
+            ))
+          ))
+        ))
+      )
+    }
+    "create job with volumes" in new FakeKubeCreate {
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "external-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "external",
+          "size" -> "1000",
+          "access_mode" -> "ReadOnlyMany",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> "{}",
+          "external_id" -> "/namespaces/test/persistentvolumeclaims/pvc-name"
+        ))
+      )
+
+      val Success(metaJob) = createInstance(
+        migrations.V33.JOB_TYPE_ID,
+        "test-job",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "false",
+          "port_mappings" -> "[]",
+          "env" -> "{}",
+          "network" -> "",
+          "volumes" -> Json.arr(
+            Json.obj("mount_path" -> "/tmp", "volume_id" -> s"${metaVolume.id}")//,
+            // Json.obj("mount_path" -> "/tmp1", "volume_resource" -> Json.obj(
+
+            // ))
+          ).toString
+        ))
+      )
+      val mockJob = mock[skuber.batch.Job]
+      mockJob.ns returns s"${testEnv.id}"
+      mockJob.name returns "job-name"
+      testSetup.client.create(any)(any,meq(skuber.batch.Job.jobDef),any) returns Future.successful(mockJob)
+      // testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+
+      val r = await(testSetup.svc.createJob(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/jobs"), testProvider.id, None),
+        metaResource = metaJob
+      ))
+
+      r.properties === Some(metaJob.properties.get ++ Map(
+        "status" -> "LAUNCHED",
+        "external_id" -> s"/namespaces/${testEnv.id}/jobs/job-name"
+      ))
+
+      val captor = ArgumentCaptor.forClass(classOf[skuber.batch.Job])
+      there were one(testSetup.client).create(captor.capture())(any,meq(skuber.batch.Job.jobDef),any)
+      val createdJob = captor.getValue()
+
+      createdJob === skuber.batch.Job(
+        metadata = skuber.ObjectMeta(
+          name = "test-job",
+          namespace = s"${testEnv.id}",
+          labels = Map(
+            KubernetesConstants.META_ENVIRONMENT_KEY -> s"${testEnv.id}",
+            KubernetesConstants.META_WORKSPACE_KEY -> s"${testWork.id}",
+            KubernetesConstants.META_FQON_KEY -> "root",
+            KubernetesConstants.META_PROVIDER_KEY -> s"${testProvider.id}",
+            KubernetesConstants.META_JOB_KEY -> s"${metaJob.id}"
+          )
+        ),
+        spec = Some(skuber.batch.Job.Spec(
+          template = Some(skuber.Pod.Template.Spec(
+            spec = Some(skuber.Pod.Spec(
+              containers = List(
+                skuber.Container(
+                  name = "test-job",
+                  image = "nginx:alpine",
+                  ports = List(),
+                  env = List(
+                    skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP"))
+                  ),
+                  resources = Some(skuber.Resource.Requirements(
+                    limits = Map("memory" -> "768.000M"),
+                    requests = Map("cpu" -> "2.000", "memory" -> "768.000M")
+                  )),
+                  livenessProbe = None,
+                  volumeMounts = List(
+                    skuber.Volume.Mount(name = s"volume-ex-${metaVolume.id}", mountPath = "/tmp", readOnly = true)
+                  )
+                )
+              ),
+              volumes = List(
+                skuber.Volume(
+                  s"volume-ex-${metaVolume.id}",
+                  skuber.Volume.PersistentVolumeClaimRef("pvc-name", true))
+              ),
+              affinity = None,
+              dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+              restartPolicy = skuber.RestartPolicy.Never,
+              imagePullSecrets = List(
+                skuber.LocalObjectReference("imagepullsecret-1"),
+                skuber.LocalObjectReference("imagepullsecret-2"),
+                skuber.LocalObjectReference("imagepullsecret-3"),
+                skuber.LocalObjectReference("imagepullsecret-4"),
+                skuber.LocalObjectReference("imagepullsecret-5")
+              )
+            ))
+          ))
+        ))
+      )
+    }
+    "delete job" in new FakeKube {
+      import skuber.LabelSelector.dsl._
+      
+      val Success(metaJob) = createInstance(
+        migrations.V33.JOB_TYPE_ID,
+        "test-job",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "false",
+          "port_mappings" -> "[]",
+          "env" -> Json.obj(
+            "VAR1" -> "VAL1",
+            "VAR2" -> "VAL2"
+          ).toString,
+          "network" -> ""
+        ))
+      )
+      // val mockJob = mock[skuber.batch.Job]
+      // mockJob.ns returns s"${testEnv.id}"
+      // mockJob.name returns "job-name"
+      val mockJob = skuber.batch.Job(
+        metadata = skuber.ObjectMeta(
+          name = "job-name",
+          namespace = s"${testEnv.id}"
+        ),
+        spec = Some(skuber.batch.Job.Spec(
+          selector = Some("a" is "b")
+        ))
+      )
+      testSetup.client.create(any)(any,meq(skuber.batch.Job.jobDef),any) returns Future.successful(mockJob)
+      // testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+
+      await(testSetup.svc.createJob(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/jobs"), testProvider.id, None),
+        metaResource = metaJob
+      ))
+
+      val mockPod = skuber.Pod(
+        name = "mock-pod",
+        spec = skuber.Pod.Spec()
+      )
+      testSetup.client.listSelected(any)(any,meq(skuber.batch.Job.jobListDef),any) returns Future.successful(new skuber.batch.JobList("","",None,List(mockJob)))
+      testSetup.client.listSelected(any)(any,meq(skuber.Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,List(mockPod)))
+      testSetup.client.delete(any,any)(meq(skuber.batch.Job.jobDef),any) returns Future.successful(())
+      testSetup.client.delete(any,any)(meq(skuber.Pod.poDef),any) returns Future.successful(())
+
+      await(testSetup.svc.destroyJob(metaJob))
+    }
+  }
+  section("jobs")
 
 
 
+
+
+
+
+
+
+
+
+  section("other")
   "KubernetesService: other" should {
 
     // todo: fix this test case
-    // "provision namespace with the expected name and labels" in new FakeKube {
-    //   val (newWork, newEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-    //   Entitlements.setNewResourceEntitlements(dummyRootOrgId, newEnv.id, user, Some(newWork.id))
-    //   testSetup.client.getOption(meq(newEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(None)
-    //   testSetup.client.create(argThat(
-    //     ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
-    //   ))(any,meq(skuber.Namespace.namespaceDef),any) returns Future(mock[skuber.Namespace])
-    //   // testSetup.client.create(argThat(
-    //   //   ((_:skuber.rbac.ClusterRoleBinding).name) ^^ beEqualTo(s"${newEnv.id.toString}-cluster-admin")
-    //   // ))(any,meq(skuber.rbac.ClusterRoleBinding.crDef),any) returns Future(mock[skuber.rbac.ClusterRoleBinding])
-    //   val newNamespace = await(testSetup.svc.getNamespace(
-    //     rc = testSetup.client,
-    //     pc = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${newEnv.id}/containers"), testProvider.id, None),
-    //     create = true
-    //   ))
-    //   there was one(testSetup.client).create(argThat(
-    //     ((_:skuber.Namespace).metadata.labels) ^^ havePairs(
-    //       KubernetesConstants.META_ENVIRONMENT_KEY -> newEnv.id.toString,
-    //       KubernetesConstants.META_WORKSPACE_KEY -> newWork.id.toString,
-    //       KubernetesConstants.META_FQON_KEY -> "root",
-    //       KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
-    //     )
-    //       and
-    //     ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
-    //   ))(any,meq(skuber.Namespace.namespaceDef),any)
-    // }
+    "provision namespace with the expected name and labels" in new FakeKube {
+      val (newWork, newEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, newEnv.id, user, Some(newWork.id))
+      testSetup.client.getOption(meq(newEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(None)
+      testSetup.client.create(argThat(
+        ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
+      ))(any,meq(skuber.Namespace.namespaceDef),any) returns Future(mock[skuber.Namespace])
+      // testSetup.client.create(argThat(
+      //   ((_:skuber.rbac.ClusterRoleBinding).name) ^^ beEqualTo(s"${newEnv.id.toString}-cluster-admin")
+      // ))(any,meq(skuber.rbac.ClusterRoleBinding.crDef),any) returns Future(mock[skuber.rbac.ClusterRoleBinding])
+      val newNamespace = await(testSetup.svc.getNamespace(
+        rc = testSetup.client,
+        pc = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${newEnv.id}/containers"), testProvider.id, None),
+        create = true
+      ))
+      there was one(testSetup.client).create(argThat(
+        ((_:skuber.Namespace).metadata.labels) ^^ havePairs(
+          KubernetesConstants.META_ENVIRONMENT_KEY -> newEnv.id.toString,
+          KubernetesConstants.META_WORKSPACE_KEY -> newWork.id.toString,
+          KubernetesConstants.META_FQON_KEY -> "root",
+          KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
+        )
+          and
+        ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
+      ))(any,meq(skuber.Namespace.namespaceDef),any)
+    }.pendingUntilFixed("todo: fix this test case")
 
     "prefer to update cpu/mem from limit instead of request" in new FakeKube {
       val testContainerId = uuid()
@@ -3088,7 +3528,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           "network" -> ""
         ))
       )
-      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      // testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment]))
       testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val Some(updatedContainerProps) = await(testSetup.svc.create(
@@ -3172,7 +3612,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           "network" -> ""
         ))
       )
-      testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
+      // testSetup.client.create(any)(any,meq(Deployment.deployDef),any) returns Future.successful(mock[skuber.ext.Deployment])
       testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val affinity = affinityCfg.as[skuber.Pod.Affinity]
@@ -3190,5 +3630,6 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
     }
 
   }
+  section("other")
 
 }

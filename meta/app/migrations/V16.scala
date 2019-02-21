@@ -13,10 +13,8 @@ import scala.util.{Success,Failure,Either,Left,Right}
  */
 class V16  extends MetaMigration with AuthorizationMethods {
   
-  private val STATE_CORRUPT_ID = UUID.fromString("681099f4-da63-48ef-99d0-75c01166d202")
-  private val STATE_CORRUPT_NAME = "Gestalt::Resource::State::Corrupt"
-   
-
+  import V16._
+  
   private implicit val acc = new MessageAccumulator()
 
   def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
@@ -67,4 +65,8 @@ class V16  extends MetaMigration with AuthorizationMethods {
     
   }
   
+}
+object V16 {
+  val STATE_CORRUPT_ID = UUID.fromString("681099f4-da63-48ef-99d0-75c01166d202")
+  val STATE_CORRUPT_NAME = "Gestalt::Resource::State::Corrupt"  
 }
