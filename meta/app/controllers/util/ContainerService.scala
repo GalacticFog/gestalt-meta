@@ -117,7 +117,7 @@ object ContainerService {
                           user: AuthAccountWithCreds,
                           metaUrl: String,
                           queryString: Map[String, Seq[String]]) = {
-    val action = "container.migrate"
+    val action = "container.migrate.pre"
     val operations = List(
       controllers.util.Authorize(action),
       controllers.util.PolicyCheck(action),
