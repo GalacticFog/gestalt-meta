@@ -439,13 +439,14 @@ class ContainerController @Inject()(
   }
 
   def migrateContainer(fqon: String, id: UUID) = AsyncAuditedAny(fqon) { implicit request =>
+    val migrateAction = "container.migrate.pre"
     for(
       container <- Either.fromOption(ResourceFactory.findById(ResourceIds.Container, id),
        Error.NotFound(notFoundMessage(ResourceIds.Container, id))).liftTo[Future];
       environment <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Environment, container.id),
        s"could not find Environment parent for container ${container.id}").liftTo[Future];
-      _ <- Either.fromOption(EventMethods.findEffectiveEventRules(environment.id, Some("container.migrate")),
-       Error.Conflict("No promotion policy found for target environment.")).liftTo[Future];
+      _ <- Either.fromOption(EventMethods.findEffectiveEventRules(environment.id, Some(migrateAction)),
+           Error.Conflict(s"No migration rule found for target environment. Expected action: '${migrateAction}'")).liftTo[Future];
       // _ <- (if(container.properties.flatMap(_.get("status")) == Some("MIGRATING")) {
       //   Left(Error.Conflict(s"Container '$id' is already migrating. No changes made."))
       // }else {
