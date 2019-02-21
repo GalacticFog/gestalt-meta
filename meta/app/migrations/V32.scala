@@ -33,7 +33,7 @@ class V32 extends MetaMigration() {
       updated  <- updatePropertyDatatype(property, TARGET_PROPERTY_TYPE, identity)
     } yield updated
     
-    handleResultStatus(result, acc)
+    handleResultStatus(result)
   }
   
   

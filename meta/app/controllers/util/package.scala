@@ -2,15 +2,10 @@ package controllers
 
 import java.io.{PrintWriter, StringWriter}
 
-import com.galacticfog.gestalt.data.models._
-
 import scala.util.{Failure, Success, Try}
 import play.api.{Logger => log}
 import play.api.mvc._
 import play.api.mvc.Results._
-
-//import com.galacticfog.gestalt.meta.services._
-
 
 import play.api.libs.json._
 
@@ -214,8 +209,6 @@ package object util {
   def okNotFoundNoResult(f: Try[Unit]) = new OkNotFoundNoResultHandler().handle( f )
  
   
-  import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-  
   /**
    * Get a List of 'standard' request operations. Includes:
    * - Authorization
@@ -230,17 +223,6 @@ package object util {
       controllers.util.PolicyCheck(action),
       controllers.util.EventsPre(action),
       controllers.util.EventsPost(action))
-  }
-  
-  def requestOpts(
-      user: AuthAccountWithCreds, 
-      policyOwner: UUID, 
-      target: GestaltResourceInstance): RequestOptions = {
-    
-    RequestOptions(user, 
-        authTarget = Option(policyOwner), 
-        policyOwner = Option(policyOwner), 
-        policyTarget = Option(target))    
   }
 
 }

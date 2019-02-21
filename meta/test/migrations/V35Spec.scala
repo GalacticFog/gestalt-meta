@@ -16,13 +16,13 @@ class V35Spec extends PlaySpecification with MetaRepositoryOps {
       TypeFactory.findById(V35.TASK_TYPE_ID) must beSome( ((_:GestaltResourceType).name) ^^ be_==(V35.TASK_TYPE_NAME) )
       TypeFactory.findByName(V35.TASK_TYPE_NAME) must beSome( ((_:GestaltResourceType).id) ^^ be_==(V35.TASK_TYPE_ID) )
     }
-    
+
     "run multiple times without error" >> {
       new V35().migrate(uuid(), None) must beRight
-      new V35().migrate(uuid(), None) must beRight      
+      new V35().migrate(uuid(), None) must beRight
     }
-    
-    "have properties.message" >> {    
+
+    "have properties.message" >> {
       PropertyFactory.findByName(V35.TASK_TYPE_ID, "message") must beSome(
        haveName("message") and haveDatatype("string") and haveRequirement("optional")
       )

@@ -22,7 +22,7 @@ class V27  extends MetaMigration {
     acc push "Looking up 'root' org"
     ResourceFactory.findRootOrg match {
       case Failure(e) => handleResultStatus(
-          Failure(new RuntimeException(s"Could not locate root Org: ${e.getMessage}")), acc)
+          Failure(new RuntimeException(s"Could not locate root Org: ${e.getMessage}")))
       case Success(org) => 
         addTypeToOrg(org.id, CATALOG_TYPE_ID, CATALOG_TYPE_NAME, identity, payload, acc) {
           createCatalogType  
