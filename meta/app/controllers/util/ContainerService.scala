@@ -117,7 +117,7 @@ object ContainerService {
                           user: AuthAccountWithCreds,
                           metaUrl: String,
                           queryString: Map[String, Seq[String]]) = {
-    val action = "container.migrate.pre"
+    val action = "container.migrate"
     val operations = List(
       controllers.util.Authorize(action),
       controllers.util.PolicyCheck(action),
@@ -144,8 +144,7 @@ object ContainerService {
     val PROVIDER_KEY = "provider"
 
     if (!qs.contains(PROVIDER_KEY) || qs(PROVIDER_KEY)(0).trim.isEmpty)
-      throw badRequest(
-        "'provider' parameter not found. (i.e. */migrate?provider={UUID})")
+      throw badRequest("'provider' parameter not found. (i.e. */migrate?provider={UUID})")
     else Try {
       if (qs(PROVIDER_KEY).size > 1) {
         throw badRequest(s"Multiple provider IDs found. found: [${qs("provider").mkString(",")}]")

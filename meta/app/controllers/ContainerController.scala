@@ -442,20 +442,31 @@ class ContainerController @Inject()(
     val migrateAction = "container.migrate.pre"
     for(
       container <- Either.fromOption(ResourceFactory.findById(ResourceIds.Container, id),
-       Error.NotFound(notFoundMessage(ResourceIds.Container, id))).liftTo[Future];
+         Error.NotFound(notFoundMessage(ResourceIds.Container, id))).liftTo[Future];
+      
       environment <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Environment, container.id),
        s"could not find Environment parent for container ${container.id}").liftTo[Future];
+      
       _ <- Either.fromOption(EventMethods.findEffectiveEventRules(environment.id, Some(migrateAction)),
            Error.Conflict(s"No migration rule found for target environment. Expected action: '${migrateAction}'")).liftTo[Future];
+      /*
+       * TODO: [sy] Not sure why this check is commented out?
+       */
       // _ <- (if(container.properties.flatMap(_.get("status")) == Some("MIGRATING")) {
       //   Left(Error.Conflict(s"Container '$id' is already migrating. No changes made."))
       // }else {
       //   Right(())
       // }).liftTo[Future];
-      _ = log.warn(s"Container '$id' is already migrating. Attempting to perform the migration again.");
-      (operations, options) = ContainerService.setupMigrateRequest(fqon, environment.id, container, request.identity,
+      /*
+       * TODO: [sy] The check above was commented out, but this log warning was left in place? I'm commenting out.
+       */
+      //_ = log.warn(s"Container '$id' is already migrating. Attempting to perform the migration again.");
+      
+      (operations, options) = ContainerService.setupMigrateRequest(fqon, environment.id, container, request.identity,          
        META_URL, request.queryString);
+      
       _ <- ComposableSafeRequest2.Protect(operations, options);
+      
       updated <- eitherFromTry(ResourceFactory.update(
         container.copy(properties=Some((container.properties getOrElse Map()) ++ Map("status" -> "MIGRATING"))),
         request.identity.account.id
