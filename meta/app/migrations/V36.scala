@@ -17,8 +17,6 @@ class V36 extends MetaMigration() {
     ) yield ()
 
     handleResultStatus(process)
-
-    
   }
 
 }

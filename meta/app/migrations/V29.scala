@@ -14,9 +14,7 @@ class V29 extends MetaMigration() {
 
     implicit val acc = new MessageAccumulator()
 
-    val process = for(
-      _ <- idempotentAddPropertyToType(ResourceIds.Environment, "provider_mapping", DataType.id("json"), RequirementType.id("optional"))
-    ) yield ()
+    val process = idempotentAddPropertyToType(ResourceIds.Environment, "provider_mapping", DataType.id("json"), RequirementType.id("optional"))
 
     handleResultStatus(process)
   }

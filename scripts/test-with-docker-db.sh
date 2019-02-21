@@ -62,7 +62,7 @@ export RABBIT_EXCHANGE="policy-exchange"
 echo ""
 echo "Running tests!"
 if [ $# -eq 0 ]; then 
-  sbt "meta/testOnly *ContainerServiceSpec" || true
+  sbt test || true
 else 
   sbt -jvm-debug 10000 -Dlogger.resource=logger-debug.xml "$*"  || true
 fi
