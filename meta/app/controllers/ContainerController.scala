@@ -449,18 +449,18 @@ class ContainerController @Inject()(
       
       _ <- Either.fromOption(EventMethods.findEffectiveEventRules(environment.id, Some(migrateAction)),
            Error.Conflict(s"No migration rule found for target environment. Expected action: '${migrateAction}'")).liftTo[Future];
-      /*
-       * TODO: [sy] Not sure why this check is commented out?
-       */
+      
+      // status check removed due to https://gitlab.com/galacticfog/gestalt-meta/issues/545
+
       // _ <- (if(container.properties.flatMap(_.get("status")) == Some("MIGRATING")) {
       //   Left(Error.Conflict(s"Container '$id' is already migrating. No changes made."))
       // }else {
       //   Right(())
       // }).liftTo[Future];
-      /*
-       * TODO: [sy] The check above was commented out, but this log warning was left in place? I'm commenting out.
-       */
-      //_ = log.warn(s"Container '$id' is already migrating. Attempting to perform the migration again.");
+
+      // _ = if(container.properties.flatMap(_.get("status")) == Some("MIGRATING")) {
+      //   log.warn(s"Container '$id' is already migrating. Attempting to perform the migration again.")
+      // };
       
       (operations, options) = ContainerService.setupMigrateRequest(fqon, environment.id, container, request.identity,          
        META_URL, request.queryString);
