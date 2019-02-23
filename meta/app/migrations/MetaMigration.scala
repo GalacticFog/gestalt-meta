@@ -163,7 +163,10 @@ abstract class MetaMigration() {
     }
   }
 
-  private[migrations] def addVerbToResourceType(identity: UUID, payload: Option[JsValue], verb: String, typeId: UUID)
+  private[migrations] def addVerbToResourceType(identity: UUID, 
+                                                payload: Option[JsValue], 
+                                                verb: String, 
+                                                typeId: UUID)
                                                (implicit acc: MessageAccumulator) = Try {
 
     acc push s"Looking up Resource Type '$typeId'"
@@ -225,7 +228,7 @@ abstract class MetaMigration() {
             acc push s"Type ${typeName} with ID ${typeId} already exists. Nothing to do."
             ProcessState.NothingToDo
           } else {
-            // Type with ID exists, buy name does not match expected - error.
+            // Type with ID exists, but name does not match expected - error.
             throw new ConflictException(s"Type with ID ${typeId} found, but name is unexpected. expected: ${typeName}. found: ${ad2.get.name}")
           }
         }
@@ -276,7 +279,48 @@ abstract class MetaMigration() {
     handleResultStatus(process)(acc)
   }
   
-  
+  /**
+   * Idempotent method to add a ResourceType to an Org. Tests first for a type with the same
+   * Name and/or ID before creating. If type already exists, the function completes successfully
+   * with a message explaining that the type already exists and there's "nothing to do".
+   * 
+   * @param org UUID of the Org where the new type will be created
+   * @param newTypeId UUID of the new type
+   * @param newTypeName name of the new type
+   * @param identity of the User creating this type
+   * @param payload Optional JSON for the creation method
+   * @param acc A MessageAccumulator
+   * @param typeFunction a function to create the new type
+   */
+  def addTypeToOrgTry(
+      org: UUID,
+      newTypeId: UUID,
+      newTypeName: String,
+      identity: UUID, 
+      payload: Option[JsValue] = None,
+      acc: MessageAccumulator)(
+          typeFunction : CreateTypeFunction)= {
+    
+    
+      testExistingType(newTypeId, newTypeName, acc).map { state =>
+        state match {
+          case ProcessState.NothingToDo => Success(())
+          case ProcessState.Continue => for {
+            creator <- Try {
+              acc push s"Looking up creator '${identity}'"
+              ResourceFactory.findById(ResourceIds.User, identity).getOrElse {
+                throw new RuntimeException(s"Could not locate creator '${identity}'")
+              }
+            }
+            newType <- {
+              acc push s"Creating Type ${newTypeName}"
+              typeFunction(org, creator)
+            }
+          } yield newType
+        }
+      }
+    
+  }  
   /**
    * Lookup a Resource Type. Add success or failure messages to accumulator
    * 
