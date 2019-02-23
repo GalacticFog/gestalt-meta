@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.json._
-import scala.util.Try
+import scala.util.{Failure,Success,Try}
 
 import migrations.V30._
 
@@ -36,9 +36,11 @@ object UserProfileMethods {
 
   
   def addFavorite(userId: UUID, profileId: UUID, newFavoriteJson: JsValue): Try[GestaltResourceInstance] = Try {
+    
     val user = ResourceFactory.findById(ResourceIds.User, userId).getOrElse {
       throw new ResourceNotFoundException(s"User with ID '${userId}' not found.")
     }
+
     val profile = ResourceFactory.findById(USERPROFILE_TYPE_ID, profileId).getOrElse {
       throw new ResourceNotFoundException(s"UserProfile with ID '${profileId}' not found.")
     }
@@ -47,7 +49,7 @@ object UserProfileMethods {
       case a: JsDefined => UUID.fromString(a.as[String])
       case b: JsUndefined => throw new BadRequestException(s"Payload property 'resource_id' is missing.")
     }
-    
+
     val nickName = (newFavoriteJson \ "nickname") match {
       case a: JsDefined => Some(a.as[String])
       case b: JsUndefined => None
@@ -57,8 +59,61 @@ object UserProfileMethods {
       throw new ResourceNotFoundException(s"Bad favorite. Resource with ID '${favoriteId}' not found.")
     }
     
-    val newFavorite = ResourceFavorite(resource_id = favoriteId, nickname = nickName)            
-    UserProfile.withResourceFavorite(profile, newFavorite).get
+    makeContextJson(favoriteId) match {
+      case Failure(e) => throw e
+      case Success(context) => {
+        val newFavorite = ResourceFavorite(resource_id = favoriteId, nickname = nickName, context = Some(context))            
+        UserProfile.withResourceFavorite(profile, newFavorite).get
+      }
+    }
+  }
+  
+  /**
+   * Build a JSON object containing the ancestor resources defining the context
+   * for the given resource ID. This will contain data about the Org, Workspace, 
+   * and Environment (as appropriate) that describe the location of this resource
+   * in the hierarchy.
+   */
+  def makeContextJson(id: UUID): Try[JsValue] = {
+    
+    def typeLabel(typeId: UUID): String = typeId match {
+      case ResourceIds.Org => "org"
+      case ResourceIds.Workspace => "workspace"
+      case ResourceIds.Environment => "environment"
+      case _ => throw new RuntimeException(s"Unexpected type ID: ${typeId}")
+    }
+    
+    def res2json(res: GestaltResourceInstance): JsValue = {
+      val link = Json.obj("id" -> res.id.toString, "name" -> res.name)
+      val extra = if (res.typeId == ResourceIds.Org) 
+        Json.obj("fqon" -> res.properties.get("fqon")) else Json.obj()
+        
+      link ++ extra
+    }
+
+    buildContextMap(id).map {
+      _.foldLeft(Json.obj()) { case (acc, (tpe, res)) =>
+        acc ++ Json.obj(typeLabel(tpe) -> res2json(res))
+      }      
+    }    
+  }
+  
+  def buildContextMap(id: UUID): Try[Map[UUID, GestaltResourceInstance]] = Try {
+ 
+    val family: List[(Int, GestaltResourceInstance)] = ResourceFactory.getInstanceAncestors(id)
+    val mappable = Seq(ResourceIds.Org, ResourceIds.Workspace, ResourceIds.Environment)
+    
+    val hi = family.foldLeft(Map[UUID, (Int, GestaltResourceInstance)]()) { case (acc, (depth, res)) =>      
+      if (!mappable.contains(res.typeId)) acc
+      else {
+        if (!acc.keySet.contains(res.typeId)) {
+          acc ++ Map(res.typeId -> (depth -> res))
+        } else if (acc(res.typeId)._1 > depth) {
+          acc ++ Map(res.typeId -> (depth -> res))
+        } else acc
+      }
+    }
+    hi.map { case (k, (_, v)) => (k -> v) }
   }
   
   def deleteFavorite(userId: UUID, profileId: UUID, favoriteId: UUID): Try[GestaltResourceInstance] = {
@@ -83,22 +138,38 @@ object UserProfileMethods {
   }    
 }  
 
+
+//case class ResourceContext(org: JsValue, workspace: Option[JsValue], environment: Option[JsValue])
 case class ResourceFavorite(
     resource_id: UUID,
     resource_type_id: Option[UUID] = None,
     resource_name: Option[String] = None,
     resource_display_name: Option[String] = None,
     resource_description: Option[String] = None,
-    nickname: Option[String] = None)
+    nickname: Option[String] = None,
+    context: Option[JsValue] = None)
     
 object ResourceFavorite {
+  
   implicit lazy val resourceFavoriteFormat = Json.format[ResourceFavorite]
+  
   def mergeWithResource(fav: ResourceFavorite, res: GestaltResourceInstance): ResourceFavorite = {
-    val displayName = for {
-      ps <- res.properties
-      dn <- ps.get("display_name")
-    } yield dn
-    ResourceFavorite(res.id, Some(res.typeId), Some(res.name), displayName, res.description, fav.nickname)
+    val (displayName, context): (Option[String], Option[JsValue]) =
+      if (res.properties.isEmpty) (None, None) 
+      else {
+        val dn = res.properties.get.get("display_name")
+        val cx = res.properties.get.get("context").fold {
+          UserProfileMethods.makeContextJson(res.id) match {
+            case Success(c) => Some(c)
+            case Failure(e) => 
+              throw new RuntimeException(s"Failed building context for resource ID '${res.id}': ${e.getMessage}")
+          }
+        }{ 
+          c => Some(Json.parse(c)) 
+        }
+        (dn, cx)
+      }
+    ResourceFavorite(res.id, Some(res.typeId), Some(res.name), displayName, res.description, fav.nickname, context)
   }
 }
 
@@ -113,18 +184,18 @@ object UserProfile {
       val favoriteResource = ResourceFactory.findById(favorite.resource_id).getOrElse {
         throw new ResourceNotFoundException(s"Bad favorite. Resource with ID '${favorite.resource_id}' not found.")
       }
-      // Build list of updated favorites
-      val newFavorite = ResourceFavorite(
-          resource_id = favoriteResource.id, 
-          resource_name = Some(favoriteResource.name), 
-          resource_type_id = Some(favoriteResource.typeId), 
-          nickname = favorite.nickname)
+//      // Build list of updated favorites
+//      val newFavorite = ResourceFavorite(
+//          resource_id = favoriteResource.id, 
+//          resource_name = Some(favoriteResource.name), 
+//          resource_type_id = Some(favoriteResource.typeId), 
+//          nickname = favorite.nickname)
       
       val oldFavorites: Seq[ResourceFavorite] = UserProfile.getFavorites(profile)
-      if (oldFavorites.exists(_.resource_id == newFavorite.resource_id)) {
+      if (oldFavorites.exists(_.resource_id == favorite.resource_id)) {
         profile
       } else {
-        updateFavoritesProperty(profile, (newFavorite +: oldFavorites))
+        updateFavoritesProperty(profile, (favorite +: oldFavorites))
       }
     }
   }

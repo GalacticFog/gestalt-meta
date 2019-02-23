@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.data.bootstrap._
 import com.galacticfog.gestalt.meta.api.sdk._
 import play.api.libs.json._
-import scala.util.{Either, Success, Failure}
+import scala.util.{Either, Success, Failure, Try}
 
 /**
  * Create the UserProfile ResourceType. This type is intended to store personal user preferences
@@ -25,9 +25,53 @@ class V30  extends MetaMigration {
       case Failure(e) => handleResultStatus(
           Failure(new RuntimeException(s"Could not locate root Org: ${e.getMessage}")))
       case Success(org) => 
-        addTypeToOrg(org.id, USERPROFILE_TYPE_ID, USERPROFILE_TYPE_NAME, identity, payload, acc) {
-          createNewResourceType  
+//        addTypeToOrg(org.id, USERPROFILE_TYPE_ID, USERPROFILE_TYPE_NAME, identity, payload, acc) {
+//          createNewResourceType  
+//        }
+//        
+        val process: Try[_] = for {
+          a <- addTypeToOrgTry(org.id, USERPROFILE_TYPE_ID, USERPROFILE_TYPE_NAME, identity, payload, acc) {
+                createNewResourceType  
+              }
+          b <- {
+            setUserPermissions(identity)
+          }
+        } yield b
+        
+        handleResultStatus(process)(acc)
+    }
+  }
+  
+  import com.galacticfog.gestalt.meta.auth._
+  import scala.util.Try
+  
+  def setUserPermissions(identity: UUID): Try[Unit] = {
+    acc push "Looking up existing users for Entitlement setting..."
+    
+    val allUsers = ResourceFactory.findAll(ResourceIds.User)
+    val updated: Seq[Try[GestaltResourceInstance]] = 
+      if (allUsers.isEmpty) {
+        acc push "No users found. Nothing to do."
+        Seq.empty[Try[GestaltResourceInstance]]
+      } else {
+        acc push s"${allUsers.size} users found for update. Updating entitlements for 'userprofile.*'"      
+        allUsers.flatMap { user =>
+          ResourceFactory.findDescendantEntitlementsFuzzy(user.id, "%userprofile%").map { ent =>
+            ResourceFactory.update(
+                Entitlement.addIdentitiesToResource(ent, Seq(user.id)),
+                identity)
+          }
         }
+      }
+    val (success, failures) = updated.partition(_.isSuccess)
+    
+    if (failures.nonEmpty) {
+      val message = failures.collect { case Failure(e) => e.getMessage }.mkString("[", ",", "]")
+      acc push "There was an error setting Entitlements."
+      Failure(new RuntimeException(s"Failed setting entitlements: $message"))  
+    } else {
+      acc push "Entitlements updated successfully"
+      Success(())
     }
   }
   

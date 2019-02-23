@@ -340,7 +340,7 @@ trait ResourceScope extends Scope with Mockito {
         "container_type" -> "foo",
         "image" -> "bar",
         "provider" -> "{}")
-        
+  
   def newDummyContainer(env: UUID, props: Map[String,String] = defaultContainerProps) = {
     createInstance(ResourceIds.Container, uuid(),
       parent = Some(env),
@@ -632,9 +632,17 @@ trait ResourceScope extends Scope with Mockito {
    * Create a new Org in Meta
    */
   def createOrg(name: String, id: UUID = uuid(), org: UUID = dummyRootOrgId, properties: Option[Hstore] = None, parent: Option[UUID] = None): Try[GestaltResourceInstance] = {
+    
+    val fqon = if (parent.isEmpty) name else {
+      val p = ResourceFactory.findById(parent.get).getOrElse {
+        throw new RuntimeException(s"Parent with ID '${parent.get}' not found.")
+      }
+      s"${p.name}.${name}"
+    }
+    
     createInstance(ResourceIds.Org, 
         name, id = id, org = org, properties = Some(properties.getOrElse(Map.empty) ++ Map(
-        "fqon" -> name
+        "fqon" -> fqon
       )), parent = parent)
   }
   
@@ -664,10 +672,15 @@ trait ResourceScope extends Scope with Mockito {
       props match {
         case Nil => acc
         case h :: t => {
+          val parentRes = ResourceFactory.findById(parent).getOrElse {
+            throw new RuntimeException(s"Parent resource with ID '$parent' not found.")
+          }          
           val actionprops: Map[String, String] = Map(
               "action" -> h._1, 
-              "identities" -> Json.stringify(Json.toJson(h._2))
+              "identities" -> Json.stringify(Json.toJson(h._2)),
+              "parent" -> Json.stringify(Json.obj("id" -> parentRes.id.toString, "name" -> parentRes.name))
           )
+
           val e = createInstance(ResourceIds.Entitlement, 
                 name = uuid.toString,
                 parent = Option(parent),

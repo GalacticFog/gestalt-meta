@@ -2,24 +2,21 @@ package controllers.util
 
 import java.util.UUID
 
-//import com.galacticfog.gestalt.data.TypeFactory
-//import com.galacticfog.gestalt.data.bootstrap._
+import com.galacticfog.gestalt.data._
+//import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.errors._
-//import com.galacticfog.gestalt.meta.api.sdk
+import com.galacticfog.gestalt.meta.api.sdk._
 //import com.galacticfog.gestalt.meta.api.sdk.{GestaltTypePropertyInput, ResourceIds}
 import com.galacticfog.gestalt.meta.test._
-//import controllers.PropertyController
-//import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.PlaySpecification
 import play.api.libs.json._
 
+import org.specs2.matcher.JsonMatchers
+
 //import org.specs2.specification.Scope
 
-class UserProfileMethodsSpec extends PlaySpecification with MetaRepositoryOps {
+class UserProfileMethodsSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
   
-  /*
-   * def readProfileFavorites(userId: UUID, payload: JsValue, validateFavs: Boolean = true): Try[Seq[ResourceFavorite]]
-   */
   "readProfileFavorites" should {
     
     "read a seq of ResourceFavorite objects from JSON" >> {
@@ -279,5 +276,175 @@ class UserProfileMethodsSpec extends PlaySpecification with MetaRepositoryOps {
   
   }
   
+  import scala.util.{Try,Success}
+  
+ "buildContextMap" should {
+   
+   "Map Org, Workspace, and Environment when ID is Environment" >> {
+     val (wrk, env) = createWorkspaceEnvironment()
+     val Success(m) = UserProfileMethods.buildContextMap(env)
+     
+     m.size === 3
+     m.contains(ResourceIds.Org) === true
+     m.contains(ResourceIds.Workspace) === true
+     m.contains(ResourceIds.Environment) === true
+     m(ResourceIds.Workspace).id === wrk
+     m(ResourceIds.Environment).id === env
+     m(ResourceIds.Org).id === dummyRootOrgId
+   }
+   
+   "Map Org/Workspace/Environment when ID is a child of Environment" >> {
+     val (wrk, env) = createWorkspaceEnvironment()
+     val container = newDummyContainer(env)
+     container must beSuccessfulTry
+     
+     val Success(m) = UserProfileMethods.buildContextMap(container.get.id)
+     m.size === 3
+     m.contains(ResourceIds.Org) === true
+     m.contains(ResourceIds.Workspace) === true
+     m.contains(ResourceIds.Environment) === true
+     m(ResourceIds.Workspace).id === wrk
+     m(ResourceIds.Environment).id === env
+     m(ResourceIds.Org).id === dummyRootOrgId     
+   }
+   
+   "Map Org/Workspace when ID is a Workspace" >> {
+     val (wrk, _) = createWorkspaceEnvironment()
+     val Success(m) = UserProfileMethods.buildContextMap(wrk)
+     
+     m.size === 2
+     m.contains(ResourceIds.Org) === true
+     m.contains(ResourceIds.Workspace) === true
+     m(ResourceIds.Workspace).id === wrk
+     m(ResourceIds.Org).id === dummyRootOrgId
+   }
+   
+   "Map Org/Workspace when ID is a child of Workspace (but not an Environment)" >> {
+     val (wrk, _) = createWorkspaceEnvironment()
+     val (policy, _) = createPolicyRule(wrk)
+     
+     ResourceFactory.findById(policy) must beSome
+     val Success(m) = UserProfileMethods.buildContextMap(policy)
+     
+     m.size === 2
+     m.contains(ResourceIds.Org) === true
+     m.contains(ResourceIds.Workspace) === true
+     m(ResourceIds.Workspace).id === wrk
+     m(ResourceIds.Org).id === dummyRootOrgId
+   }
+   
+   "Map Org when ID is an Org" >> {
+     val org = dummyRootOrgId
+     val Success(m) = UserProfileMethods.buildContextMap(org)
+     
+     m.size === 1
+     m.contains(ResourceIds.Org) === true
+     m(ResourceIds.Org).id === org
+   }
+   
+   "Map Org when ID is a child of Org (but is not a Workspace)" >> {
+     val org = dummyRootOrgId
+     val (policy, _) = createPolicyRule(org)
+     
+     ResourceFactory.findById(policy) must beSome
+     val Success(m) = UserProfileMethods.buildContextMap(policy)
+     
+     m.size === 1
+     m.contains(ResourceIds.Org) === true
+     m(ResourceIds.Org).id === dummyRootOrgId
+   }
+   
+   "Map a single Org when target Org is a child Org" >> {
+     val orgId = uuid()
+     val org = createOrg("foo", orgId.toString, parent = Some(dummyRootOrgId))
+     org must beSuccessfulTry
+     
+     val Success(m) = UserProfileMethods.buildContextMap(org.get.id)
+     m.size === 1
+     m.contains(ResourceIds.Org) === true
+     m(ResourceIds.Org).id === org.get.id     
+   }
+ }
+ 
+ "makeContextJson" should {
+   
+   "build Org/Workspace/Environment context" >> {
+     val workspaceName = uuid.toString
+     val environmentName = uuid.toString
+     val org = dummyRootOrgId
+     
+     val (wrk, env) = createWorkspaceEnvironment(wrkName = workspaceName, envName = environmentName)
+     val Success(json) = UserProfileMethods.makeContextJson(env)
+     val Success(m) = Try(json.validate[Map[String, JsValue]].get)
+
+     m.size === 3
+     m.contains("org") === true
+     m.contains("workspace") === true
+     m.contains("environment") === true
+     
+     m("org").toString         must /("id" -> org.toString) and /("name" -> "root")
+     m("workspace").toString   must /("id" -> wrk.toString) and /("name" -> workspaceName)
+     m("environment").toString must /("id" -> env.toString) and /("name" -> environmentName)
+   }
+   
+   "build Org/Workspace context" >> {
+     val workspaceName = uuid.toString
+     val environmentName = uuid.toString
+     val org = dummyRootOrgId
+     
+     val (wrk, _) = createWorkspaceEnvironment(wrkName = workspaceName, envName = environmentName)
+     val Success(json) = UserProfileMethods.makeContextJson(wrk)
+     val Success(m) = Try(json.validate[Map[String, JsValue]].get)
+ 
+     m.size === 2
+     m.contains("org") === true
+     m.contains("workspace") === true
+     m.contains("environment") === false
+     
+     m("org").toString         must /("id" -> org.toString) and /("name" -> "root")
+     m("workspace").toString   must /("id" -> wrk.toString) and /("name" -> workspaceName)
+   }
+   
+   "build Org context" >> {
+     val org = dummyRootOrgId
+
+     val Success(json) = UserProfileMethods.makeContextJson(org)
+     val Success(m) = Try(json.validate[Map[String, JsValue]].get)
+ 
+     m.size === 1
+     m.contains("org") === true
+     m.contains("workspace") === false
+     m.contains("environment") === false
+     
+     m("org").toString must /("id" -> org.toString) and /("name" -> "root")
+   }
+   
+   "build Org context with nested Org" >> {
+     val parentId = dummyRootOrgId
+     val childId = uuid
+     val grandchildId = uuid
+     val grandchildName = "grandchild-1"
+     val childName = "child-1"
+     
+     val child = createOrg(childName, childId, parent = Some(parentId))
+     child must beSuccessfulTry
+     val grandchild = createOrg(grandchildName, grandchildId, parent = Some(child.get.id))
+     grandchild must beSuccessfulTry
+     
+     val p = ResourceFactory.findParent(grandchildId)
+     p must beSome
+     p.get.id === childId
+     
+     val Success(json) = UserProfileMethods.makeContextJson(grandchildId)
+     val Success(m) = Try(json.validate[Map[String, JsValue]].get)
+     
+     m.size === 1
+     m.contains("org") === true
+     m.contains("workspace") === false
+     m.contains("environment") === false
+     
+     m("org").toString must /("id" -> grandchildId.toString) and /("name" -> grandchildName) and /("fqon" -> s"$childName.$grandchildName")
+   }
+ }
   
 }
