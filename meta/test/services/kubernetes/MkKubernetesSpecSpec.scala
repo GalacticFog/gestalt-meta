@@ -1056,6 +1056,71 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
       )
     }
 
+    "create pod template with gpu" in {
+      val container = newInstance(
+        ResourceIds.Container,
+        "test-container",
+        properties = Some(Map(
+          "name" -> "test-container",
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testK8SProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "env" -> Json.obj(
+            "VAR1" -> "VAL1",
+            "VAR2" -> "VAL2"
+          ).toString,
+          "network" -> "",
+          "gpu_support" -> Json.obj(
+            "enabled" -> true,
+            "count" -> 2,
+            "type" -> "nvidia"
+          ).toString
+        ))
+      )
+      val res = mkPodTemplate(testK8SProvider, container)
+      res === Right(
+        skuber.Pod.Template.Spec(
+          spec = Some(skuber.Pod.Spec(
+            containers = List(
+              skuber.Container(
+                name = "test-container",
+                image = "nginx:alpine",
+                ports = List(),
+                env = List(
+                  skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP")), 
+                  skuber.EnvVar("VAR1", skuber.EnvVar.StringValue("VAL1")),
+                  skuber.EnvVar("VAR2", skuber.EnvVar.StringValue("VAL2"))
+                ),
+                resources = Some(skuber.Resource.Requirements(
+                  limits = Map("memory" -> "768.000M", "nvidia.com/gpu" -> "2"),
+                  requests = Map("cpu" -> "2.000", "memory" -> "768.000M")
+                )),
+                livenessProbe = None,
+                imagePullPolicy = skuber.Container.PullPolicy.Always
+              )
+            ),
+            volumes = List(),
+            affinity = None,
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst,
+            imagePullSecrets = List(
+              skuber.LocalObjectReference("imagepullsecret-1"),
+              skuber.LocalObjectReference("imagepullsecret-2"),
+              skuber.LocalObjectReference("imagepullsecret-3"),
+              skuber.LocalObjectReference("imagepullsecret-4"),
+              skuber.LocalObjectReference("imagepullsecret-5")
+            )
+          ))
+        )
+      )
+    }
+
     "create pod template with secrets" in {
       val container = newInstance(
         ResourceIds.Container,

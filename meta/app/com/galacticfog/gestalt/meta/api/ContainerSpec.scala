@@ -43,7 +43,8 @@ case class ContainerSpec(name: String = "",
                          user: Option[String] = None,
                          external_id: Option[String] = None,
                          created: Option[DateTime] = None,
-                         secrets: Seq[ContainerSpec.SecretMount] = Seq.empty
+                         secrets: Seq[ContainerSpec.SecretMount] = Seq.empty,
+                         gpu_support: ContainerSpec.GPUSupport = ContainerSpec.GPUSupport(enabled=false, count=1, `type`="")
                         ) extends Spec {
 
 }
@@ -51,6 +52,9 @@ case class ContainerSpec(name: String = "",
 case object ContainerSpec extends Spec {
 
   val log = Logger(this.getClass)
+
+  case class GPUSupport(enabled: Boolean, count: Int, `type`: String)
+  implicit val gpuSupportFormat = Json.format[GPUSupport]
 
   case class ServiceAddress(host: String, port: Int, protocol: Option[String], virtual_hosts: Option[Seq[String]] = None)
   case object ServiceAddress {

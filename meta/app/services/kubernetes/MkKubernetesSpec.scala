@@ -150,9 +150,22 @@ trait MkKubernetesSpec {
       memoryConstraints = (providerProperties.config.memory_requirement_type map { r =>
         r -> Map[String,skuber.Resource.Quantity](skuber.Resource.memory -> f"${specProperties.memory}%1.3fM")
       }).toMap;
+      // https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/
+      gpuConstraints <- if(specProperties.gpu_support.enabled) {
+        val knownGpuVendors = Seq("nvidia", "amd")
+        if(knownGpuVendors.contains(specProperties.gpu_support.`type`)) {
+          Right(Map[String,skuber.Resource.Quantity](s"${specProperties.gpu_support.`type`}.com/gpu" -> s"${specProperties.gpu_support.count}"))
+        }else {
+          Left(Error.BadRequest(s"""Kubernetes provider supports the following gpu vendors / types: ${knownGpuVendors.mkString(", ")}"""))
+        }
+      }else {
+        Right(Map.empty[String,skuber.Resource.Quantity])
+      };
       resourceRequirements = skuber.Resource.Requirements(
-        requests = (cpuConstraints.getOrElse(KubernetesProviderProperties.Request, Map()) ++ memoryConstraints.getOrElse(KubernetesProviderProperties.Request, Map())),
-        limits = (cpuConstraints.getOrElse(KubernetesProviderProperties.Limit, Map()) ++ memoryConstraints.getOrElse(KubernetesProviderProperties.Limit, Map()))
+        requests = (cpuConstraints.getOrElse(KubernetesProviderProperties.Request, Map.empty)
+         ++ memoryConstraints.getOrElse(KubernetesProviderProperties.Request, Map.empty)),
+        limits = (cpuConstraints.getOrElse(KubernetesProviderProperties.Limit, Map.empty)
+         ++ memoryConstraints.getOrElse(KubernetesProviderProperties.Limit, Map.empty)) ++ gpuConstraints
       );
       pullPolicy = if(specProperties.force_pull) {
         skuber.Container.PullPolicy.Always
