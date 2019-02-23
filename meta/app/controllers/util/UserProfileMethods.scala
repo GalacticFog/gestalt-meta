@@ -68,7 +68,12 @@ object UserProfileMethods {
     }
   }
   
-  
+  /**
+   * Build a JSON object containing the ancestor resources defining the context
+   * for the given resource ID. This will contain data about the Org, Workspace, 
+   * and Environment (as appropriate) that describe the location of this resource
+   * in the hierarchy.
+   */
   def makeContextJson(id: UUID): Try[JsValue] = {
     
     def typeLabel(typeId: UUID): String = typeId match {
@@ -145,13 +150,26 @@ case class ResourceFavorite(
     context: Option[JsValue] = None)
     
 object ResourceFavorite {
+  
   implicit lazy val resourceFavoriteFormat = Json.format[ResourceFavorite]
+  
   def mergeWithResource(fav: ResourceFavorite, res: GestaltResourceInstance): ResourceFavorite = {
-    val displayName = for {
-      ps <- res.properties
-      dn <- ps.get("display_name")
-    } yield dn
-    ResourceFavorite(res.id, Some(res.typeId), Some(res.name), displayName, res.description, fav.nickname)
+    val (displayName, context): (Option[String], Option[JsValue]) =
+      if (res.properties.isEmpty) (None, None) 
+      else {
+        val dn = res.properties.get.get("display_name")
+        val cx = res.properties.get.get("context").fold {
+          UserProfileMethods.makeContextJson(res.id) match {
+            case Success(c) => Some(c)
+            case Failure(e) => 
+              throw new RuntimeException(s"Failed building context for resource ID '${res.id}': ${e.getMessage}")
+          }
+        }{ 
+          c => Some(Json.parse(c)) 
+        }
+        (dn, cx)
+      }
+    ResourceFavorite(res.id, Some(res.typeId), Some(res.name), displayName, res.description, fav.nickname, context)
   }
 }
 
