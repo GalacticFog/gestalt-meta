@@ -33,7 +33,7 @@ object UserProfileMethods {
       }  
     }
   }
-
+  
   
   def addFavorite(userId: UUID, profileId: UUID, newFavoriteJson: JsValue): Try[GestaltResourceInstance] = Try {
     
@@ -58,14 +58,12 @@ object UserProfileMethods {
     val favoriteResource = ResourceFactory.findById(favoriteId).getOrElse {
       throw new ResourceNotFoundException(s"Bad favorite. Resource with ID '${favoriteId}' not found.")
     }
+
+    val newFavorite = ResourceFavorite.mergeWithResource(
+      ResourceFavorite(favoriteId, nickname = nickName),
+      favoriteResource)
     
-    makeContextJson(favoriteId) match {
-      case Failure(e) => throw e
-      case Success(context) => {
-        val newFavorite = ResourceFavorite(resource_id = favoriteId, nickname = nickName, context = Some(context))            
-        UserProfile.withResourceFavorite(profile, newFavorite).get
-      }
-    }
+    UserProfile.withResourceFavorite(profile, newFavorite).get
   }
   
   /**
@@ -169,7 +167,8 @@ object ResourceFavorite {
         }
         (dn, cx)
       }
-    ResourceFavorite(res.id, Some(res.typeId), Some(res.name), displayName, res.description, fav.nickname, context)
+    ResourceFavorite(
+        res.id, Some(res.typeId), Some(res.name), displayName, res.description, fav.nickname, context)
   }
 }
 
