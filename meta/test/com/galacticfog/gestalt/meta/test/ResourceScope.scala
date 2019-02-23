@@ -633,7 +633,7 @@ trait ResourceScope extends Scope with Mockito {
    */
   def createOrg(name: String, id: UUID = uuid(), org: UUID = dummyRootOrgId, properties: Option[Hstore] = None, parent: Option[UUID] = None): Try[GestaltResourceInstance] = {
     
-    val fqon = if (parent.isEmpty) "" else {
+    val fqon = if (parent.isEmpty) name else {
       val p = ResourceFactory.findById(parent.get).getOrElse {
         throw new RuntimeException(s"Parent with ID '${parent.get}' not found.")
       }
