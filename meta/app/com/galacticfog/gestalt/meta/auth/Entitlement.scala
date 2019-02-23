@@ -32,6 +32,22 @@ case class Entitlement(
 
 object Entitlement {
   
+  def addIdentitiesToResource(ent: GestaltResourceInstance, ids: Seq[UUID]): GestaltResourceInstance = {
+    val newIds: Seq[UUID] = (for {
+      ps   <- ent.properties
+      oids <- ps.get("identities")
+      nids = {
+        Json.parse(oids).validate[List[UUID]].get ++ ids.toList
+        //oids 
+      }
+    } yield nids).getOrElse(Seq.empty[UUID])
+    
+    val newprops = ent.properties.getOrElse(Map.empty[String,String])
+    ent.copy(properties =
+      Some(newprops ++ Map("identities" -> Json.stringify(Json.toJson(newIds))))
+    )
+  }
+  
   /**
    * Convert a GestaltResourceInstance to an Entitlement object.
    */
@@ -78,7 +94,8 @@ object EntitlementProps {
     val action = props("action")
     val value = if (props.contains("value")) Some(props("value")) else None
     val identities = if (props.contains("identities")) Some(props("identities")) else None
-    
+    val parent = if (props.contains("parent")) Some(Json.parse(props("parent"))) else None
+        
     def parseIdentities(str: Option[String]): Option[Seq[UUID]] = { 
       str map { 
         Json.parse(_).as[JsArray].value map { s =>  
@@ -86,7 +103,10 @@ object EntitlementProps {
         }
       }
     }
-    EntitlementProps(action, value, parseIdentities(identities))
+    /*
+     * TODO: Validate that r istypeof 'Entitlement'
+     */
+    EntitlementProps(action, value, parseIdentities(identities), parent)
   }
   
  /**
@@ -114,6 +134,9 @@ case class EntitlementProps(
    * Validates that action name is valid for the resource type and that all identities given are valid.
    */
   def validate(): Either[String,EntitlementProps] = {
+    /*
+     * TODO: This should also validate that 'parent' exists.
+     */
     if (identities.isEmpty) Right((this))
     else {
       val given = identities.get
@@ -125,6 +148,9 @@ case class EntitlementProps(
     }
   }
   
+  /**
+   * Add the given UUIDs to the 'identities' list.
+   */
   def addIdentities(ids: UUID*): EntitlementProps = {
     this.copy(identities = identities map { ids ++ _ })
   }
