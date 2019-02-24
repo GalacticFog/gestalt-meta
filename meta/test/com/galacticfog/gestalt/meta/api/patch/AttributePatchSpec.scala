@@ -1,15 +1,14 @@
 package com.galacticfog.gestalt.meta.api.patch
 
-
-
 import org.specs2.mutable._
 import org.specs2.specification._
 import play.api.libs.json._
 
-
 import com.galacticfog.gestalt.patch._
-
 import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.data._
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
 class AttributePatchSpec extends Specification with ResourceScope with BeforeAll {
 
@@ -83,9 +82,7 @@ class AttributePatchSpec extends Specification with ResourceScope with BeforeAll
   }
 
   "addAttribute" should {
-    
-//    val res = newInstance(uuid(), "new-resource")
-    
+
     "add or replace an optional parameter" in {
       val res = newInstance(uuid(), "new-resource")
       res.description must beNone
@@ -97,7 +94,6 @@ class AttributePatchSpec extends Specification with ResourceScope with BeforeAll
       mod2.description must beSome("bar")
     }    
     
-    
     "add or replace an optional array" in {
       val res = newInstance(uuid(), "new-resource")
       res.tags must beNone
@@ -108,7 +104,6 @@ class AttributePatchSpec extends Specification with ResourceScope with BeforeAll
       val mod2 = AttributePatch.addAttribute(mod1, PatchOp.Add("/tags", jsonArray("l", "m", "n")))
       mod2.tags must beSome(List("l", "m", "n"))
     }
-    
     
     "add an element to an existing array at the given index" in {
       val res = newInstance(uuid(), "new-resource")
@@ -232,17 +227,14 @@ class AttributePatchSpec extends Specification with ResourceScope with BeforeAll
       mod1.variables must beSome(Map("key1" -> "value1", "key2" -> "value2"))
       
       val mod2 = AttributePatch.removeAttribute(mod1, PatchOp.Remove("/variables/key1"))
-      mod2.variables must beSome(Map("key2" -> "value2"))
-      
+      mod2.variables must beSome(Map("key2" -> "value2"))      
     }
-    
-    
+        
     "throw an exception if the Map doesn't exist" in {
       val res = newInstance(uuid(), "new-resource")
       AttributePatch.removeAttribute(res, PatchOp.Remove("/variables")) must throwAn[IllegalArgumentException]
     }
-    
-    
+        
     "throw an exception if the given KEY in the Map does not exist" in {
       val res = newInstance(uuid(), "new-resource")
       val mod1 = AttributePatch.addAttribute(res, PatchOp.Add("/variables", Json.obj("key1" -> "value1", "key2" -> "value2")))
@@ -250,12 +242,14 @@ class AttributePatchSpec extends Specification with ResourceScope with BeforeAll
       
       AttributePatch.removeAttribute(res, PatchOp.Remove("/variables/INVALID_KEY")) must throwAn[IllegalArgumentException]
     }
-    
   }
-  
   
   "replaceAttribute" should {
     
+    val Active = "Gestalt::Resource::State::Active"
+    val Disabled = "Gestalt::Resource::State::Disabled"
+    val Failed = "Gestalt::Resource::State::Failed"
+
     "replace an attribute" in {
       val res = newInstance(uuid(), "new-resource")
       res.name must_== "new-resource"
@@ -288,10 +282,25 @@ class AttributePatchSpec extends Specification with ResourceScope with BeforeAll
       mod2.variables.get.get("key1") must beSome("patched")
     }
     
+    "accept a valid UUID for /resource_state" >> {
+      val res = newInstance(ResourceIds.Workspace, uuid.toString)
+      val disabledId = ResourceState.id(Disabled)
+      val mod1 = AttributePatch.replaceAttribute(res, PatchOp.Replace("/resource_state", JsString(disabledId.toString)))
+      mod1.state === disabledId
+    }
+    
+    "accept a fully-qualified name for /resource_state" >> {
+      val res = newInstance(ResourceIds.Workspace, uuid.toString)
+      val failedId = ResourceState.id(Failed)
+      val mod1 = AttributePatch.replaceAttribute(res, PatchOp.Replace("/resource_state", JsString(Failed)))
+      mod1.state === failedId
+    }
+    
+    "fail if the given value is invalid" >> {
+      val res = newInstance(ResourceIds.Workspace, uuid.toString)
+      AttributePatch.replaceAttribute(res, PatchOp.Replace("/resource_state", JsString("foo"))) must throwA[BadRequestException]
+    }
   }
-  
-  
 
-  
 }
 
