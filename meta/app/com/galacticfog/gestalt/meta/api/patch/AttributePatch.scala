@@ -2,7 +2,8 @@ package com.galacticfog.gestalt.meta.api.patch
 
 
 import scala.util.Try
-import com.galacticfog.gestalt.data.models._
+import com.galacticfog.gestalt.data.ResourceState
+import com.galacticfog.gestalt.data.models.{ResourceLike, GestaltResourceInstance}
 import java.util.UUID
 
 import com.galacticfog.gestalt.patch._
@@ -148,7 +149,14 @@ object AttributePatch {
       case Attributes.Org           => r.copy(orgId = UUID.fromString(op.value.get.as[String]))
 //      case Attributes.Owner         => r.copy(owner = ownerFromJson(op.value))
       case Attributes.Name          => r.copy(name = op.value.get.as[String])
-      case Attributes.ResourceState => r.copy(state = UUID.fromString(op.value.get.as[String]))
+      case Attributes.ResourceState => {
+        /*
+         * Here we're accepting either the UUID or fully-qualified name of the target resource_state.
+         */
+        val given = op.value.get.as[String]
+        val newstate = Try(UUID.fromString(given)).getOrElse(ResourceState.id(given))
+        r.copy(state = newstate)
+      }
       case Attributes.Description   => r.copy(description = Some(op.value.get.as[String]))
       case Attributes.Tags          => r.copy(tags = OpReplaceSeq(r.tags, op))
       case Attributes.Variables     => r.copy(variables = OpReplaceMap(r.variables, op))

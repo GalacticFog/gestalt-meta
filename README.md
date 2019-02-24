@@ -46,6 +46,38 @@ Persistence service for Gestalt Framework Resources.
     export RABBIT_ROUTE="policy"
     export RABBIT_EXCHANGE="policy-exchange"
 
+## REST API
+
+### Updating Resources
+
+#### PATCH
+_[Work in Progress]_
+
+The Meta REST API implements a subset of the JSON PATCH specification as defined in [RFC 6902](https://tools.ietf.org/html/rfc6902). In accordance with that standard, the path/selection notation is compliant with the JSON Pointer specification defined in [RFC 6901](https://tools.ietf.org/html/rfc6901).
+
+
+##### Supported Operations
+- add
+- remove
+- replace
+
+##### Unsupported Operations
+- move
+- copy
+- test
+
+##### Notes
+`resource_state` can be patched with the UUID or fully-qualified name of the desired state.  For example, the following ops are valid and equivalent:
+
+    [
+      { "op": "replace", "path": "/resource_state", "value": "2ad1f4ce-7d1e-4bc9-a9bd-4de30a63521d" },
+      { "op": "replace", "path": "/resource_state", "value": "Gestalt::Resource::State::Active" }
+    ]
+A list of all valid `resource_state` values can be found at endpoint on any Meta instance:
+
+    GET /resourcestates
+
+
 ## Event Rules - Function Suppression [alpha]
 *[This is not intended to provide full documentation on how to implement Policy in Meta - this note is just to document the 'function-suppression' capability we're working on]*
 
