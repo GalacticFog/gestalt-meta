@@ -64,7 +64,6 @@ class DefaultMetaConfiguration extends GestaltConfiguration {
 }
 
 
-
 @Singleton
 class DefaultMetaConfigManager @Inject()(
     config: GestaltConfigurationManager, 
@@ -78,14 +77,11 @@ class DefaultMetaConfigManager @Inject()(
   val GESTALT_META_ROOT_IDENTITY = "GESTALT_META_ROOT_IDENTITY"
   val DEFAULT_CONFIG_SECRETS_PATH = "/gestalt/root"
   
-  
   initialize()
-  
   
   def setup(force: Boolean): Try[Unit] = {
     config.setup(force)
   }
-
 
   /**
    * Initialize Meta configuration.

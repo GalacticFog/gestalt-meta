@@ -27,10 +27,7 @@ import com.galacticfog.gestalt.data.ResourceSelector
 
 import scala.util.{Failure, Success, Try}
 import controllers.util.Security
-import com.galacticfog.gestalt.security.api.GestaltAccount
-import com.galacticfog.gestalt.security.api.GestaltOrg
-import com.galacticfog.gestalt.security.api.GestaltResource
-import com.galacticfog.gestalt.security.api.json.JsonImports._
+
 import play.api.cache.CacheApi
 import play.api.mvc.RequestHeader
 import scala.concurrent.duration._
@@ -154,54 +151,6 @@ class TypeController @Inject()(
     (domain, definitions)
   }
 
-  private[controllers] def getRootAccountWithCreds(): AuthAccountWithCreds = {
-
-    val securityJs = Json.toJson {
-      security.getOrgSyncTree2() match {
-        case Failure(e) =>
-          throw new RuntimeException("Failed retrieving data from gestalt-security: " + e.getMessage)
-        case Success(t) => t
-      }
-    }.as[JsObject]
-
-    val adminId: UUID = {
-      Js.find(securityJs, "/admin/id").fold {
-        throw new RuntimeException("Could not parse admin id from security info.")
-      }{ id =>
-        UUID.fromString(id.as[String])
-      }
-    }
-    val rootAccount  = findSecurityObject[GestaltAccount](securityJs, "/accounts", adminId)
-    val directoryOrg = findSecurityObject[GestaltOrg](securityJs, "/orgs", rootAccount.directory.orgId)
-
-    TypeMethods.makeAccount(directoryOrg, rootAccount)
-  }
-
-
-  private def findSecurityObject[A <: GestaltResource](json: JsObject, path: String, target: UUID)(implicit ra: Reads[A]): A = {
-    val found = for {
-      obj <- Js.find(json,path)
-      as = Js.parse[Seq[A]](obj) match {
-        case Failure(e) => throw new RuntimeException("Failed parsing accounts: " + e.getMessage,e)
-        case Success(as) => as
-      }
-      a <- as.find(_.id == target)
-    } yield a
-    found getOrElse {
-      throw new RuntimeException("Could not find admin account in security info.")
-    }
-  }
-
-  private[this] lazy val root: AuthAccountWithCreds = try {
-    getRootAccountWithCreds()
-  } catch {
-    case e: Throwable => {
-      log.error("Failed looking up root user : " + e.getMessage)
-      throw e
-    }
-  }
-
-
   /**
     * Add a new child type to a parent at the type level. This enables child-type to be a 'childOf'
     * the parent type in the schema (child-type is now a child of each given parent-type).
@@ -229,9 +178,19 @@ class TypeController @Inject()(
                                                      childType: UUID,
                                                      parents: Seq[UUID]): Try[Unit] = Try {
 
+    val rootUser: GestaltResourceInstance = {
+      metaConfig.getRoot.fold {
+        throw new RuntimeException("Can't find Root user for entitlement update.")
+      }{ rid => 
+          ResourceFactory.findById(ResourceIds.User, rid).fold {
+            throw new RuntimeException("Can't find Root user for entitlement update.")
+          }{ u => u }
+      }
+    }
+    val callerId = caller.account.id
 
     val t = parents.foldLeft(Try(())) { (_, parent) =>
-      TypeMethods.updateInstanceEntitlements(parent, childType, root, caller, None) match {
+      TypeMethods.updateInstanceEntitlementsUserId(parent, childType, rootUser, callerId, None) match {
         case Left(errs) =>
           throw new RuntimeException("There were errors setting instance entitlements: " + errs.mkString(","))
         case Right(_) => Success(())
@@ -246,10 +205,8 @@ class TypeController @Inject()(
 
     Try {
       val owner = caller.account.id
-
-      log.debug("Converting input types to domain...")
       val (domain, propdefs) = deconstructType(org, owner, typeJson)
-
+      
       log.debug("Creating new ResourceType...")
       val newtype = TypeFactory.create(owner)(domain) match {
         case Success(s) => s
@@ -257,7 +214,6 @@ class TypeController @Inject()(
           log.error("Error creating new ResourceType",e)
           throw e
       }
-
       log.debug("Checking for TypeProperties...")
       if (propdefs.isDefined) {
         for (prop <- propdefs.get) {
@@ -300,8 +256,8 @@ class TypeController @Inject()(
   }
 
   /**
-    * Get a single ResourceType by ID
-    */
+   * Get a single ResourceType by ID
+   */
   private def OkTypeByIdResult(org: UUID, id: UUID, qs: Map[String, Seq[String]])(
     implicit request: RequestHeader) = {
 
@@ -314,8 +270,8 @@ class TypeController @Inject()(
   }
 
   /**
-    * Convert GestaltResourceTypeInut to GestaltResourceType
-    */
+   * Convert GestaltResourceTypeInut to GestaltResourceType
+   */
   private def typeFromInput(org: UUID, owner: UUID, r: GestaltResourceTypeInput) = Try {
 
     val ownerLink = ResourceOwnerLink(ResourceIds.User, owner)
@@ -336,8 +292,6 @@ class TypeController @Inject()(
       auth = r.auth)
   }
 
-
-
   private def safeGetTypeJson(json: JsValue): Try[GestaltResourceTypeInput] = Try {
     json.validate[GestaltResourceTypeInput].map{
       case resource: GestaltResourceTypeInput => resource
@@ -345,7 +299,6 @@ class TypeController @Inject()(
       e => throw new BadRequestException(Js.errorString(e))
     }
   }
-
 
   def getPropertySchemaFqon(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     getSchemaResult(typeId, request.queryString)
@@ -395,9 +348,7 @@ class TypeController @Inject()(
     } else emptyArray
   }
 
-
   private def renderTypePropertySchema(ps: Seq[GestaltTypeProperty], qs: Map[String, Seq[String]]) = {
-
     def loop(ps: Seq[GestaltTypeProperty], acc: Seq[SchemaEntry]): Seq[SchemaEntry] = {
       ps match {
         case Nil => acc
@@ -421,7 +372,6 @@ class TypeController @Inject()(
     //      buf append s"\t%-${namewidth}s : %-${typewidth}s %s".format(p.name, typename(p.datatype), required) + "\n"
     //    }
     //    buf toString
-
   }
 
   private def typename(tpe: UUID) = {
