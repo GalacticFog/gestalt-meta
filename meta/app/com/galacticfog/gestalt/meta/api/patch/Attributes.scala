@@ -6,7 +6,7 @@ object Attributes {
   val Name = "/name"
   val Description = "/description"
   val ResourceType = "/resource_type"
-  val ResourceState = "/state"
+  val ResourceState = "/resource_state"
   val Owner = "/owner"
   val Created = "/created"
   val Modified = "/modified"
