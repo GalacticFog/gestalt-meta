@@ -210,12 +210,11 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       (ent.properties.get("action") -> ent)
     }.toMap
     
-    
-  val rootid = Resource.findFqon("root").fold {
-    throw new RuntimeException("Could not find Root Org. Unable to determine ID for entitlement setting.")
-  }{ r => 
-    r.id 
-  }    
+    val rootid = Resource.findFqon("root").fold {
+      throw new RuntimeException("Could not find Root Org. Unable to determine ID for entitlement setting.")
+    }{ r => 
+      r.id 
+    }    
     
     entitlements.map { ent =>
 
@@ -269,13 +268,11 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       (ent.properties.get("action") -> ent)
     }.toMap
     
-    
-  val rootid = Resource.findFqon("root").fold {
-    throw new RuntimeException("Could not find Root Org. Unable to determine ID for entitlement setting.")
-  }{ r => 
-    r.id 
-  }    
-    
+    val rootid = Resource.findFqon("root").fold {
+      throw new RuntimeException("Could not find Root Org. Unable to determine ID for entitlement setting.")
+    }{ r => 
+      r.id 
+    }    
     
     entitlements.map { ent =>
 

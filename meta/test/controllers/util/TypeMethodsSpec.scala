@@ -421,6 +421,30 @@ class TypeMethodsSpec extends PlaySpecification with MetaRepositoryOps {
       TypeMethods.validateCreatePayload(payload) must beFailedTry.withThrowable[BadRequestException]
     }
     
+    "add 'actions.verbs' if missing from payload" >> {
+      val payload = Json.parse(      
+        s"""
+        |{
+        |  "name": "",
+        |  "properties": {
+        |    "actions": {
+        |      "prefix": "${uuid.toString}"
+        |    },
+        |    "api": {
+        |      "rest_name": "${uuid.toString}"
+        |    },
+        |    "lineage": {
+        |      "parent_types": ["${ResourceIds.Org}"],
+        |      "child_types": []
+        |    }
+        |  }
+        |}    
+        """.stripMargin)
+      
+      val json = TypeMethods.validateCreatePayload(payload) 
+      json must beSuccessfulTry
+    }    
+    
     "PROVIDER TYPES ONLY" >> {
       
       "accept duplicate actions.prefix value of 'provider'" >> {

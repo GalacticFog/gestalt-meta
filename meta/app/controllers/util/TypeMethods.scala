@@ -18,6 +18,8 @@ import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.security.api.DIRECTORY_TYPE_INTERNAL
+import com.galacticfog.gestalt.data.bootstrap._  
+import scala.util.{Either,Left,Right}
 
 object TypeMethods extends AuthorizationMethods {
 
@@ -38,8 +40,7 @@ object TypeMethods extends AuthorizationMethods {
       TypeMethods.withPropertiesExpanded(p.id, typeJson, metaUrl)
     } else typeJson
   }  
-  
-  
+
   /**
    * Render a type with property_defs expanded inline. This method a JSON rendering of a GestaltResourceType
    * and injects fully rendered property_defs (as opposed to just property links)
@@ -56,24 +57,18 @@ object TypeMethods extends AuthorizationMethods {
     val jsonProperties = PropertyFactory.findAll(pid).map { p =>
       Output.renderTypePropertyOutput(p, Some(metaUrl))
     }
-  
     /*
      * Replace property_defs with fully expanded properties.
      */
     pjson.as[JsObject] ++ Json.obj("property_defs" -> jsonProperties)
   }  
  
-  
-  import com.galacticfog.gestalt.data.bootstrap._  
-  
   def getParentTypes(tpe: GestaltResourceType): Seq[UUID] = {  
     val target = SystemType.fromResourceType(tpe)
     target.lineage.fold(Seq.empty[UUID]) { lin =>
       lin.parent_types.map(UUID.fromString(_))
     }
   }
-  
-  import scala.util.{Either,Left,Right}
   
   /*
    * This function ADDS entitlements for new resource-types
@@ -133,9 +128,9 @@ object TypeMethods extends AuthorizationMethods {
   def updateInstanceEntitlementsUserId(
       targetType: UUID,
       forType: UUID,
-      rootUser: GestaltResourceInstance, //Account: AuthAccountWithCreds,
-      userId: UUID, //AuthAccountWithCreds,
-      startingOrg: Option[UUID] = None): Either[List[String], Unit]/*: Seq[Seq[Try[GestaltResourceInstance]]]*/ = {
+      rootUser: GestaltResourceInstance,
+      userId: UUID,
+      startingOrg: Option[UUID] = None): Either[List[String], Unit] = {
     
     val instances = startingOrg.fold {
       ResourceFactory.findAll(targetType)
@@ -147,10 +142,7 @@ object TypeMethods extends AuthorizationMethods {
      * Set each entitlement for root
      * If the caller is the owner of a resource, add caller identity to entitlement
      */
-
     val rootId = rootUser.id
-//    val userId = callerAccount.account.id
-    
     val actions = getSelfActions(forType)
     val actionList = actions.mkString(",")
     
@@ -169,7 +161,6 @@ object TypeMethods extends AuthorizationMethods {
       val orgId = if (instance.typeId == ResourceIds.Org) instance.id else instance.orgId
       
       val ents = entitlements2(rootId, orgId, instance.id, Seq.empty, actions, owner)
-
       setEntitlements(orgId, rootUser, instance, ents).collect { case Failure(e) => e.getMessage }
     }
     
@@ -181,11 +172,8 @@ object TypeMethods extends AuthorizationMethods {
     if (test.nonEmpty) Left(test) else Right(())
   }  
   
-  
-  
   import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
   import com.galacticfog.gestalt.security.api.GestaltOrg
-  
   
   def makeAccount(directoryOrg: GestaltOrg, account: GestaltAccount) = {  
     val directory = GestaltDirectory(uuid(), directoryOrg.name, None, orgId = directoryOrg.id, directoryType = DIRECTORY_TYPE_INTERNAL.label)
@@ -307,7 +295,6 @@ object TypeMethods extends AuthorizationMethods {
     modifyLineage(caller, child, parents)(TypeMethods.removeChildTypes)
   }
 
-  
   def destroyTypeEntitlements(tpe: GestaltResourceType): Try[Unit] = Try {
     val prefix = tpe.properties.get.get("actions").fold {
       throw new RuntimeException("Could not find `actions` value in resource-type data.")
@@ -340,9 +327,7 @@ object TypeMethods extends AuthorizationMethods {
     }    
   }  
   
-  
   def modifyLineage(caller: UUID, child: UUID, parents: Seq[UUID])(f: LineageFunction) = {
-
     def loop(pids: Seq[UUID], acc: Seq[Try[GestaltResourceType]]): Seq[Try[GestaltResourceType]] = {
       pids match {
         case Nil => acc
@@ -358,7 +343,6 @@ object TypeMethods extends AuthorizationMethods {
     loop(parents, Seq.empty)
   }  
   
-  
   def typeIsProvider(json: JsValue, prefix: Option[String], restName: Option[String]): Boolean = {
     Js.find(json.as[JsObject], "/extend").fold(false) { ext =>
       val issubtype = ResourceFactory.isSubTypeOf(UUID.fromString(ext.as[String]), ResourceIds.Provider)
@@ -373,13 +357,10 @@ object TypeMethods extends AuthorizationMethods {
   def validateCreatePayload(payload: JsValue): Try[JsValue] = Try {
     
     val json = payload.as[JsObject]
-    
     val info = TypeFactory.findTypeMetadata()
-
-    val prefixes: Seq[String]  = info.filter { case (_,_,_,p) => p.nonEmpty }.map { _._4.get }//info.collect { case (_,_,_,p) if p.isDefined => p.get }
+    val prefixes: Seq[String]  = info.filter { case (_,_,_,p) => p.nonEmpty }.map { _._4.get }
     val restNames: Seq[String] = info.filter { case (_,_,r,_) => r.nonEmpty }.map { case (_,_,r,_) => r.get }
     val typeNames: Seq[String] = info.map { case (_,n,_,_) => n.toLowerCase }
-
     
     val prefix = Js.find(json, "/properties/actions/prefix") getOrElse {
       throw new BadRequestException("You must supply a value for `/properties/actions/prefix`")
@@ -430,11 +411,19 @@ object TypeMethods extends AuthorizationMethods {
     if (typeNames.contains(nm.toLowerCase)) {
       throw new BadRequestException(s"A type with name '$nm' already exists. Type names must be globally unique.")
     }
-    
-    payload
-  }  
+
+    /*
+     * Ensure JSON contains 'properties.actions.verbs'.
+     */
+    import com.galacticfog.gestalt.patch._
+    val verbs = Js.find(json, "/properties/actions/verbs")
+    if (verbs.nonEmpty) payload 
+    else {
+      PatchDocument(PatchOp.Add("/properties/actions/verbs", Json.toJson(Seq.empty[String])))
+          .applyPatch(json).get
+    }
+  }
   
- 
   /**
    * Transform type JSON into input-format.
    */
@@ -467,14 +456,12 @@ object TypeMethods extends AuthorizationMethods {
         auth = r.auth)
   }
   
-  
   def payloadToResource(org: UUID, owner: UUID, json: JsValue): Try[GestaltResourceType] = {
     for {
       in  <- safeGetTypeJson(json)
       out <- typeFromInput(org, owner, in)
     } yield out
   }
-  
   
   def typeId(name: String): Option[UUID] = {
     TypeFactory.findByName(name) map { _.id }
