@@ -1,3 +1,4 @@
+<!-- logback configuration for https://test.galacticfog.com -->
 <configuration>
     
   <conversionRule conversionWord="coloredLevel" converterClass="play.api.Logger$ColoredLevel" />

@@ -46,7 +46,7 @@ class UpgradeCheckTask @Inject()(
     UpgradeVars.url match {
       case None => Future(Left(s"Could not find URL to perform upgrade check. Nothing to do."))
       case Some(url) => {
-        log.info("Checking for Meta upgrade at: ${url}")
+        log.info(s"Checking for Meta upgrade at: ${url}")
         val response = ws.url(url)
           .withRequestTimeout(UpgradeVars.DEFAULT_UPGRADE_CHECK_TIMEOUT_SECONDS)
           .get()

@@ -28,3 +28,7 @@ node_modules/
 .vscode
 *.zip
 !/meta/public/system/lambdas/*.zip
+
+.ensime_cache
+.ensime
+ensime.sbt
