@@ -143,7 +143,7 @@ class EnvironmentProviderMappingControllerSpec extends PlaySpecification with Ge
 
         contentAsJson(result) must equalTo(Json.obj(
           "code" -> 400,
-          "message" -> "Failed to parse payload: /namespaces: error.path.missing"
+          "message" -> "Failed to parse payload: missing value at /namespaces"
         ))
       }
       {

@@ -270,8 +270,7 @@ class ContainerSpecSpec extends Specification with MetaRepositoryOps with Before
       val updatedInput = input.copy(properties=Some(input.properties.get ++ Map(
         "port_mappings" -> Json.arr(
           Json.obj(
-            "protocol" -> "HTTP",
-            "container_port" -> 8000,
+            "container_port" -> "8000",
             "host_port" -> 8001,
             "service_port" -> 8002,
             "name" -> "name",
@@ -286,7 +285,8 @@ class ContainerSpecSpec extends Specification with MetaRepositoryOps with Before
         )
       )))
       val instance = inputToInstance(UUID.randomUUID(), updatedInput)
-      ContainerSpec.fromResourceInstance(instance) must beFailedTry.withThrowable[RuntimeException]("Could not convert GestaltResourceInstance into ContainerSpec: Failed to parse payload: \\/port_mappings\\(0\\)\\/type: error.invalid")
+      val errorMsg = "Could not convert GestaltResourceInstance into ContainerSpec: Failed to parse payload: a number expected, a number expected at \\/port_mappings\\(0\\)\\/container_port; missing value at \\/port_mappings\\(0\\)\\/protocol; invalid value at \\/port_mappings\\(0\\)\\/type"
+      ContainerSpec.fromResourceInstance(instance) must beFailedTry.withThrowable[RuntimeException](errorMsg)
     }
   }
 
@@ -302,7 +302,7 @@ class ContainerSpecSpec extends Specification with MetaRepositoryOps with Before
         "access_mode" -> JsString("BLAH")
       )))
       val instance = inputToInstance(UUID.randomUUID(), updatedInput)
-      VolumeSpec.fromResourceInstance(instance) must beFailedTry.withThrowable[com.galacticfog.gestalt.meta.api.errors.BadRequestException](".*?Failed to parse payload: \\/access_mode: Volume Access Mode type must be one of 'ReadWriteOnce', 'ReadWriteMany', 'ReadOnlyMany'.*?")
+      VolumeSpec.fromResourceInstance(instance) must beFailedTry.withThrowable[com.galacticfog.gestalt.meta.api.errors.BadRequestException](".*?Failed to parse payload: Volume Access Mode type must be one of 'ReadWriteOnce', 'ReadWriteMany', 'ReadOnlyMany' at \\/access_mode.*?")
     }
   }
 
