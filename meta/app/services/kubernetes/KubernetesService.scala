@@ -41,7 +41,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   
   import KubernetesConstants._
 
-  val mks = new MkKubernetesSpec {}
+  val keb = new KubernetesEntityBuilder {}
 
   override private[this] val log = Logger(this.getClass)
 
@@ -96,7 +96,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       spec = spec0.copy(items=items);
       providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](context.provider).liftTo[Future];
       namespace <- cleanly(context.provider, DefaultNamespace)( getNamespace(_, context, create = true) );
-      k8sSecret0 <- mks.mkSecret(providerProperties, spec).liftTo[Future];
+      k8sSecret0 <- keb.mkSecret(providerProperties, spec).liftTo[Future];
       k8sSecret = k8sSecret0.copy(
         metadata = skuber.ObjectMeta(
           name = secret.name,
@@ -699,8 +699,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       spec0 <- ResourceSerde.deserialize[VolumeSpec,Error.UnprocessableEntity](metaResource).liftTo[Future];
       spec = spec0.copy(name=metaResource.name);
       providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](context.provider).liftTo[Future];
-      pvcSpec <- mks.mkPvcSpec(providerProperties, spec).liftTo[Future];
-      pvSpecOpt <- mks.mkPvSpec(providerProperties, spec).liftTo[Future];
+      pvcSpec <- keb.mkPvcSpec(providerProperties, spec).liftTo[Future];
+      pvSpecOpt <- keb.mkPvSpec(providerProperties, spec).liftTo[Future];
       labels = Map(
         META_VOLUME_KEY -> s"${metaResource.id}"
       ) ++ mkLabels(context);
@@ -933,7 +933,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     for(
       providerResource <- eitherFrom[Error.NotFound].option(ResourceFactory.findById(context.providerId), s"Provider not found: ${context.providerId}");
       providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](providerResource);
-      podTemplateOriginal <- mks.mkPodTemplate(providerProperties, specProperties);
+      podTemplateOriginal <- keb.mkPodTemplate(providerProperties, specProperties);
       podTemplateWithSecrets <- fillSecretsInPodTemplate(context, specProperties, podTemplateOriginal);
       podTemplateWithVolumes <- fillVolumesInPodTemplate(context, specProperties, podTemplateWithSecrets);
       podTemplateWithLabels = podTemplateWithVolumes.addLabels(
@@ -941,10 +941,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           KubernetesConstants.META_CONTAINER_KEY -> s"${metaResource.id}"
         ) ++ mkLabels(context)
       );
-      clusterIpServiceSpec <- mks.mkClusterIpServiceSpec(providerProperties, specProperties);
-      nodePortServiceSpec <- mks.mkNodePortServiceSpec(providerProperties, specProperties);
-      loadBalancerServiceSpec <- mks.mkLoadBalancerServiceSpec(providerProperties, specProperties);
-      ingressSpec <- mks.mkIngressSpec(providerProperties, specProperties)
+      clusterIpServiceSpec <- keb.mkClusterIpServiceSpec(providerProperties, specProperties);
+      nodePortServiceSpec <- keb.mkNodePortServiceSpec(providerProperties, specProperties);
+      loadBalancerServiceSpec <- keb.mkLoadBalancerServiceSpec(providerProperties, specProperties);
+      ingressSpec <- keb.mkIngressSpec(providerProperties, specProperties)
     ) yield {
       val deployment = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
@@ -1220,7 +1220,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       }else {
         Right(())
       };
-      podTemplateOriginal <- mks.mkPodTemplate(providerProperties, specProperties);
+      podTemplateOriginal <- keb.mkPodTemplate(providerProperties, specProperties);
       // restart policy can be OnFailure or Never for Jobs. Using Never here because it makes most sense for laser use case
       // deployments have restart policy Always at all times
       podTemplateWithRestartPolicy = podTemplateRestartPolicy.set(skuber.RestartPolicy.Never)(podTemplateOriginal);
