@@ -195,7 +195,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
       )
 
       val res = Try(Await.result(awslProvider.createLambda(testLambdaProvider, newTestLambda), 10 .seconds))
-      res must beFailedTry.withThrowable[BadRequestException]("Failed to parse payload: /handler: error.path.missing")
+      res must beFailedTry.withThrowable[BadRequestException]("Failed to parse payload: missing value at /handler")
     }
   }
   "importLambda" should {

@@ -888,7 +888,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       status(result) must equalTo(BAD_REQUEST)
       contentAsJson(result).as[JsValue] must_== Json.obj(
         "code" -> 400,
-        "message" -> "Failed to parse payload: /provider: error.path.missing; /items: error.path.missing"
+        "message" -> "Failed to parse payload: missing value at /provider; missing value at /items"
       )
     }
 
@@ -909,7 +909,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val Some(result) = route(app,request)
       contentAsJson(result).as[JsValue] must_== Json.obj(
         "code" -> 400,
-        "message" -> "Failed to parse payload: /items: error.path.missing"
+        "message" -> "Failed to parse payload: missing value at /items"
       )
       status(result) must equalTo(BAD_REQUEST)
     }
@@ -1090,7 +1090,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val Some(result) = route(app,request)
       contentAsJson(result).as[JsValue] must_== Json.obj(
         "code" -> 400,
-        "message" -> "Failed to parse payload: /provider/id: error.path.missing"
+        "message" -> "Failed to parse payload: missing value at /provider/id"
       )
       status(result) must equalTo(BAD_REQUEST)
     }

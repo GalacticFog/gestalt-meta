@@ -63,11 +63,27 @@ object EitherWithErrors {
   } 
 
   def eitherFromJsResult[A](jsResult: JsResult[A]): Either[Error.Error,A] = {
+    def humanFriendlyMessage(message: String): String = {
+      // possible values:
+      // https://github.com/playframework/play-json/blob/4ef026852074183ecab68603dda8b8af3647d7be/play-json/shared/src/main/scala/play/api/libs/json/Reads.scala
+      message match {
+        case "error.expected.jsnumber" => "a number expected"
+        case "error.expected.jsstring" => "a string expected"
+        case "error.expected.jsobject" => "an object expected"
+        case "error.expected.jsboolean" => "a boolean expected"
+        case "error.expected.jsarray" => "an array expected"
+        case "error.expected.numberformatexception" => "unexpected number format"
+        case "error.invalid" => "invalid value"
+        case "error.path.missing" => "missing value"
+        case other => other
+      }
+    }
+
     jsResult match {
       case JsError(errors) => {
         val errorMessage = errors map { case(path, errors) =>
-          val allErrors = errors.map(_.message).mkString(", ")
-          s"${path}: $allErrors"
+          val allErrors = errors.map(e => humanFriendlyMessage(e.message)).mkString(", ")
+          s"$allErrors at ${path}"
         } mkString("; ")
         Left(Error.BadRequest(s"Failed to parse payload: ${errorMessage}"))
       }
