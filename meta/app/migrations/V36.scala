@@ -13,7 +13,8 @@ class V36 extends MetaMigration() {
 
     val process = for(
       _ <- idempotentAddPropertyToType(ResourceIds.Lambda, "gpu_support", DataType.id("json"), RequirementType.id("optional"));
-      _ <- idempotentAddPropertyToType(ResourceIds.Container, "gpu_support", DataType.id("json"), RequirementType.id("optional"))
+      _ <- idempotentAddPropertyToType(ResourceIds.Container, "gpu_support", DataType.id("json"), RequirementType.id("optional"));
+      _ <- idempotentAddPropertyToType(migrations.V33.JOB_TYPE_ID, "gpu_support", DataType.id("json"), RequirementType.id("optional"))
     ) yield ()
 
     handleResultStatus(process)

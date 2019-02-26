@@ -17,5 +17,10 @@ class V36Spec extends PlaySpecification with MetaRepositoryOps {
       val tpe = TypeFactory.findById(ResourceIds.Container)
       PropertyFactory.findByName(tpe.get.id, "gpu_support") must beSome
     }
+
+    "Add gpu_support to Job" >> {
+      val tpe = TypeFactory.findById(migrations.V33.JOB_TYPE_ID)
+      PropertyFactory.findByName(tpe.get.id, "gpu_support") must beSome
+    }
   }
 }
