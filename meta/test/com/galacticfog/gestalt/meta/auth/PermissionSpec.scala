@@ -1,10 +1,10 @@
-
-/*
- * 
- * trait Entitlements is not yet used. 
- * 
- */
-
+//
+///*
+// * 
+// * trait Entitlements is not yet used. 
+// * 
+// */
+//
 //package com.galacticfog.gestalt.meta.auth
 //
 //import com.galacticfog.gestalt.meta.api.sdk._
