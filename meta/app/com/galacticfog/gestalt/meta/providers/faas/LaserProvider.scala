@@ -140,7 +140,7 @@ class LaserProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) ex
       }else {
         secretEnvironments.headOption.map(_.id)
       }
-      val computePathOpt = executorEnvironmentOptId.map(controllers.routes.ContainerController.postContainer(fqon, _).url)
+      val computePathOpt = executorEnvironmentOptId.map(controllers.routes.ContainerController.postJob(fqon, _).url)
       LaserLambda(
         id = Some(lambda.id.toString),
         eventFilter = Some(UUID.randomUUID.toString),
