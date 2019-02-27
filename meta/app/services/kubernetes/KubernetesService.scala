@@ -1137,6 +1137,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       }
     }
 
+    val namespace = getNamespaceForResource[skuber.ext.Deployment](metaResource)
+
     for(
       _ <- (if(previousName.isDefined && previousName != Some(metaResource.name)) {
         Left(Error.BadRequest("renaming containers is not supported"))
@@ -1147,9 +1149,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       specProperties = specProperties0.copy(name=metaResource.name);    // this should be done somewhere else
       skuberSpecs <- buildDeploymentSpecs(context, metaResource, specProperties).liftTo[Future];
       (newDeployment, newClusterIpServiceOpt, newNodePortServiceOpt, newLoadBalancerServiceOpt, newIngressOpt) = skuberSpecs;
-      // shouldn't this attempt to take namespace from external_id ?
-      namespace  <- cleanly(context.provider, DefaultNamespace)( getNamespace(_, context, create = true) );
-      updatedResource <- cleanly(context.provider, namespace.name) { kube =>
+      updatedResource <- cleanly(context.provider, namespace) { kube =>
         // fetching old kubernetes entities for this container
         val fGetServices = kube.listSelected[skuber.ServiceList](META_CONTAINER_KEY is s"${metaResource.id}").map(_.items)
         val fGetIngressOpt = kube.getOption[skuber.ext.Ingress](specProperties.name)
@@ -1173,9 +1173,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             }
           };
           // filling in namespace
-          setServiceOptNamespace = (some composeLens GenLens[skuber.Service](_.metadata.namespace)).set(namespace.name);
-          setDeploymentNamespace = GenLens[skuber.ext.Deployment](_.metadata.namespace).set(namespace.name);
-          setIngressOptNamespace = (some composeLens GenLens[skuber.ext.Ingress](_.metadata.namespace)).set(namespace.name);
+          setServiceOptNamespace = (some composeLens GenLens[skuber.Service](_.metadata.namespace)).set(namespace);
+          setDeploymentNamespace = GenLens[skuber.ext.Deployment](_.metadata.namespace).set(namespace);
+          setIngressOptNamespace = (some composeLens GenLens[skuber.ext.Ingress](_.metadata.namespace)).set(namespace);
 
           fClusterIpServiceOpt = reconcile(kube, withClusterIp(oldClusterIpServiceOpt, setServiceOptNamespace(newClusterIpServiceOpt)));
           fNodePortServiceOpt = reconcile(kube, withClusterIp(oldNodePortServiceOpt, setServiceOptNamespace(newNodePortServiceOpt)));

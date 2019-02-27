@@ -177,8 +177,6 @@ object EitherWithErrors {
     }
   }
 
-  // type ErrorApplicativeError[A[_]] = ApplicativeError[A,Error.Error]
-
   implicit def futureErrorApplicativeError(implicit ec: ExecutionContext) = new ApplicativeError[Future,Error.Error] {
     def ap[A, B](ff: Future[(A) => B])(fa: Future[A]): Future[B] = {
       ApplicativeError[Future,Throwable].ap(ff)(fa)
