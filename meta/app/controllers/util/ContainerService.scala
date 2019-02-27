@@ -299,10 +299,14 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
   val CAAS_PROVIDER_TIMEOUT_MS = 5000
 
   def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(Instance, Seq[ContainerInstance])]] = {
+    val resourceInstanceOpt = ResourceFactory.findChildOfType(parentId = environment, typeId = ResourceIds.Container, resourceId = containerId).orElse {
+      ResourceFactory.findChildOfType(parentId = environment, typeId = migrations.V33.JOB_TYPE_ID, resourceId = containerId)
+    }
+
     val maybeMetaContainer = for {
-      r <- ResourceFactory.findChildrenOfType(parentId = environment, typeId = ResourceIds.Container) find { _.id == containerId }
-      s <- ContainerSpec.fromResourceInstance(r).toOption
-    } yield (r -> s)
+      resourceInstance <- resourceInstanceOpt
+      containerSpec    <- ContainerSpec.fromResourceInstance(resourceInstance).toOption
+    } yield (resourceInstance, containerSpec)
 
     val fMaybeUpdate = (for {
       (metaContainer, metaContainerSpec) <- maybeMetaContainer
