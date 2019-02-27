@@ -13,7 +13,7 @@ import com.galacticfog.gestalt.util.ResourceSerde
 import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.util.Error
 
-class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach {
+class KubernetesEntityBuilderSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach {
   override def beforeAll(): Unit = pristineDatabase()
 
   override def before: Unit = scalikejdbc.config.DBs.setupAll()
@@ -22,7 +22,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
 
   sequential
     
-  lazy val mks = new MkKubernetesSpec { }
+  lazy val keb = new KubernetesEntityBuilder { }
 
   def deserializeProperties[A: Reads](provider: GestaltResourceInstance, resource: GestaltResourceInstance): EitherError[(KubernetesProviderProperties.Properties,A)] = {
     import cats.syntax.either._
@@ -35,7 +35,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
     ) yield (providerProperties, specProperties)
   }
 
-  "MkKubernetesSpec#mkPvSpec & MkKubernetesSpec#mkPvcSpec" should {
+  "KubernetesEntityBuilder#mkPvSpec & KubernetesEntityBuilder#mkPvcSpec" should {
     lazy val testK8SProvider = newInstance(
       typeId = ResourceIds.KubeProvider,
       name = "test-provider",
@@ -51,13 +51,12 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
     def mkPvcAndPv(pp: KubernetesProviderProperties.Properties, sp: VolumeSpec): EitherError[(skuber.PersistentVolumeClaim.Spec,Option[skuber.PersistentVolume.Spec])] = {
       import cats.syntax.either._
       for(
-        pvc <- mks.mkPvcSpec(pp, sp);
-        pv <- mks.mkPvSpec(pp, sp)
+        pvc <- keb.mkPvcSpec(pp, sp);
+        pv <- keb.mkPvSpec(pp, sp)
       ) yield (pvc, pv)
     }
 
     "create host_path PV&PVC" in {
-      val mks = new MkKubernetesSpec { }
       val volume = newInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
@@ -96,7 +95,6 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
     }
 
     "not create host_path PV&PVC if host path is not in whitelist" in {
-      val mks = new MkKubernetesSpec { }
       val volume = newInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
@@ -117,7 +115,6 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
     }
 
     "not create persistent PV&PVC" in {
-      val mks = new MkKubernetesSpec { }
       val volume = newInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
@@ -138,7 +135,6 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
     }
 
     "create external PV&PVC" in {
-      val mks = new MkKubernetesSpec { }
       val volume = newInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
@@ -177,7 +173,6 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
     }
 
     "create dynamic PV&PVC" in {
-      val mks = new MkKubernetesSpec { }
       val volume = newInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
@@ -208,7 +203,6 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
     }
 
     "not create dynamic PV&PVC if storage class is not in whitelist" in {
-      val mks = new MkKubernetesSpec { }
       val volume = newInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "test-volume",
@@ -230,7 +224,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
   }
 
 
-  "MkKubernetesSpec#mkPodTemplate" should {
+  "KubernetesEntityBuilder#mkPodTemplate" should {
     lazy val testK8SProvider = newInstance(
       typeId = ResourceIds.KubeProvider,
       name = "test-provider",
@@ -248,7 +242,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
 
       for(
         ppsp <- deserializeProperties[ContainerSpec](provider, resource);
-        r <- mks.mkPodTemplate(ppsp._1, ppsp._2)
+        r <- keb.mkPodTemplate(ppsp._1, ppsp._2)
       ) yield r
     }
 
@@ -1320,7 +1314,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
   }
 
 
-  "MkKubernetesSpec#mk***ServiceSpec" should {
+  "KubernetesEntityBuilder#mk***ServiceSpec" should {
     lazy val testK8SProvider = newInstance(
       typeId = ResourceIds.KubeProvider,
       name = "test-provider",
@@ -1395,7 +1389,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
       )
       val (pp, sp) = deserializeProperties[ContainerSpec](testK8SProvider, container).right.get
 
-      mks.mkClusterIpServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
+      keb.mkClusterIpServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
         ports = List(
           skuber.Service.Port(
             name = "http",
@@ -1420,7 +1414,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         ),
         _type = skuber.Service.Type.ClusterIP
       )))
-      mks.mkNodePortServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
+      keb.mkNodePortServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
         ports = List(
           skuber.Service.Port(
             name = "https",
@@ -1437,7 +1431,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         ),
         _type = skuber.Service.Type.NodePort
       )))
-      mks.mkLoadBalancerServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
+      keb.mkLoadBalancerServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
         ports = List(
           skuber.Service.Port(
             name = "https3",
@@ -1468,9 +1462,9 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
       )
       val (pp, sp) = deserializeProperties[ContainerSpec](testK8SProvider, container).right.get
 
-      mks.mkClusterIpServiceSpec(pp, sp) === Right(None)
-      mks.mkNodePortServiceSpec(pp, sp) === Right(None)
-      mks.mkLoadBalancerServiceSpec(pp, sp) === Right(None)
+      keb.mkClusterIpServiceSpec(pp, sp) === Right(None)
+      keb.mkNodePortServiceSpec(pp, sp) === Right(None)
+      keb.mkLoadBalancerServiceSpec(pp, sp) === Right(None)
     }
   }
 }

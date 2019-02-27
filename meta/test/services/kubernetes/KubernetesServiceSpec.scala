@@ -2255,7 +2255,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       updatedContainerProps("port_mappings") must /#(3) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
       updatedContainerProps("port_mappings") must /#(3) /("container_port" -> 443)
       updatedContainerProps("port_mappings") must /#(3) /("service_port"   -> 8443)
-      there were two(testSetup.client).close
+      there was one(testSetup.client).close
     }
 
     "delete empty ingress on container PUT" in new FakeKubeCreate(port_mappings = Seq(
@@ -2312,7 +2312,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there was one(testSetup.client).delete(meq("test-container"),any)(meq(Ingress.ingDef),any)
       there was one(testSetup.client).update(any)(any,meq(Service.svcDef),any)
       there was one(testSetup.client).update(any)(any,meq(Deployment.deployDef),any)
-      there were two(testSetup.client).close
+      there was one(testSetup.client).close
     }
 
     "delete empty services on container PUT" in new FakeKubeCreate(port_mappings = Seq(
@@ -2364,10 +2364,9 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there was one(testSetup.client).delete(meq(metaContainer.name),       any)(meq(Service.svcDef),any)
       there was one(testSetup.client).delete(meq(metaContainer.name+"-ext"),any)(meq(Service.svcDef),any)
       there was one(testSetup.client).delete(meq(metaContainer.name+"-lb"), any)(meq(Service.svcDef),any)
-      there were two(testSetup.client).close
+      there was one(testSetup.client).close
     }
 
-    section("now")
     "create service and ingress on container update" in new FakeKubeCreate(port_mappings = Seq(
       ContainerSpec.PortMapping(
         protocol = "tcp",
@@ -2420,9 +2419,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       updatedContainerProps must havePair(
         "image" -> "nginx:updated"
       )
-      there were two(testSetup.client).close
+      there was one(testSetup.client).close
     }
-    section("now")
   }
   section("connectivity")
 
@@ -3505,7 +3503,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       updatedContainerProps("port_mappings") must /#(0) and not /#(0) /("service_address")
       updatedContainerProps("port_mappings") must /#(1) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
       updatedContainerProps("port_mappings") must /#(2) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
-      there were two(testSetup.client).close
+      there was one(testSetup.client).close
     }
 
     "deployment should not have affinity if not configured in the provider" in new FakeKube() {

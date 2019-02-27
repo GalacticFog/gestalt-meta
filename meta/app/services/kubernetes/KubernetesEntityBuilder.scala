@@ -17,7 +17,7 @@ import services.util.CommandParser
 Transforms meta entities into kubernetes entities:
 (KubernetesProviderProperties.Properties, META_SPEC) => EitherError[SKUBER_SPEC]
 */
-trait MkKubernetesSpec {
+trait KubernetesEntityBuilder {
   import skuber.json.format._
 
   private def mkTransportProtocol(protocol: String): EitherError[skuber.Protocol.Protocol] = {

@@ -41,7 +41,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   
   import KubernetesConstants._
 
-  val mks = new MkKubernetesSpec {}
+  val keb = new KubernetesEntityBuilder {}
 
   override private[this] val log = Logger(this.getClass)
 
@@ -96,7 +96,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       spec = spec0.copy(items=items);
       providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](context.provider).liftTo[Future];
       namespace <- cleanly(context.provider, DefaultNamespace)( getNamespace(_, context, create = true) );
-      k8sSecret0 <- mks.mkSecret(providerProperties, spec).liftTo[Future];
+      k8sSecret0 <- keb.mkSecret(providerProperties, spec).liftTo[Future];
       k8sSecret = k8sSecret0.copy(
         metadata = skuber.ObjectMeta(
           name = secret.name,
@@ -699,8 +699,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       spec0 <- ResourceSerde.deserialize[VolumeSpec,Error.UnprocessableEntity](metaResource).liftTo[Future];
       spec = spec0.copy(name=metaResource.name);
       providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](context.provider).liftTo[Future];
-      pvcSpec <- mks.mkPvcSpec(providerProperties, spec).liftTo[Future];
-      pvSpecOpt <- mks.mkPvSpec(providerProperties, spec).liftTo[Future];
+      pvcSpec <- keb.mkPvcSpec(providerProperties, spec).liftTo[Future];
+      pvSpecOpt <- keb.mkPvSpec(providerProperties, spec).liftTo[Future];
       labels = Map(
         META_VOLUME_KEY -> s"${metaResource.id}"
       ) ++ mkLabels(context);
@@ -933,7 +933,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     for(
       providerResource <- eitherFrom[Error.NotFound].option(ResourceFactory.findById(context.providerId), s"Provider not found: ${context.providerId}");
       providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](providerResource);
-      podTemplateOriginal <- mks.mkPodTemplate(providerProperties, specProperties);
+      podTemplateOriginal <- keb.mkPodTemplate(providerProperties, specProperties);
       podTemplateWithSecrets <- fillSecretsInPodTemplate(context, specProperties, podTemplateOriginal);
       podTemplateWithVolumes <- fillVolumesInPodTemplate(context, specProperties, podTemplateWithSecrets);
       podTemplateWithLabels = podTemplateWithVolumes.addLabels(
@@ -941,10 +941,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           KubernetesConstants.META_CONTAINER_KEY -> s"${metaResource.id}"
         ) ++ mkLabels(context)
       );
-      clusterIpServiceSpec <- mks.mkClusterIpServiceSpec(providerProperties, specProperties);
-      nodePortServiceSpec <- mks.mkNodePortServiceSpec(providerProperties, specProperties);
-      loadBalancerServiceSpec <- mks.mkLoadBalancerServiceSpec(providerProperties, specProperties);
-      ingressSpec <- mks.mkIngressSpec(providerProperties, specProperties)
+      clusterIpServiceSpec <- keb.mkClusterIpServiceSpec(providerProperties, specProperties);
+      nodePortServiceSpec <- keb.mkNodePortServiceSpec(providerProperties, specProperties);
+      loadBalancerServiceSpec <- keb.mkLoadBalancerServiceSpec(providerProperties, specProperties);
+      ingressSpec <- keb.mkIngressSpec(providerProperties, specProperties)
     ) yield {
       val deployment = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
@@ -1137,6 +1137,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       }
     }
 
+    val namespace = getNamespaceForResource[skuber.ext.Deployment](metaResource)
+
     for(
       _ <- (if(previousName.isDefined && previousName != Some(metaResource.name)) {
         Left(Error.BadRequest("renaming containers is not supported"))
@@ -1147,9 +1149,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       specProperties = specProperties0.copy(name=metaResource.name);    // this should be done somewhere else
       skuberSpecs <- buildDeploymentSpecs(context, metaResource, specProperties).liftTo[Future];
       (newDeployment, newClusterIpServiceOpt, newNodePortServiceOpt, newLoadBalancerServiceOpt, newIngressOpt) = skuberSpecs;
-      // shouldn't this attempt to take namespace from external_id ?
-      namespace  <- cleanly(context.provider, DefaultNamespace)( getNamespace(_, context, create = true) );
-      updatedResource <- cleanly(context.provider, namespace.name) { kube =>
+      updatedResource <- cleanly(context.provider, namespace) { kube =>
         // fetching old kubernetes entities for this container
         val fGetServices = kube.listSelected[skuber.ServiceList](META_CONTAINER_KEY is s"${metaResource.id}").map(_.items)
         val fGetIngressOpt = kube.getOption[skuber.ext.Ingress](specProperties.name)
@@ -1173,9 +1173,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             }
           };
           // filling in namespace
-          setServiceOptNamespace = (some composeLens GenLens[skuber.Service](_.metadata.namespace)).set(namespace.name);
-          setDeploymentNamespace = GenLens[skuber.ext.Deployment](_.metadata.namespace).set(namespace.name);
-          setIngressOptNamespace = (some composeLens GenLens[skuber.ext.Ingress](_.metadata.namespace)).set(namespace.name);
+          setServiceOptNamespace = (some composeLens GenLens[skuber.Service](_.metadata.namespace)).set(namespace);
+          setDeploymentNamespace = GenLens[skuber.ext.Deployment](_.metadata.namespace).set(namespace);
+          setIngressOptNamespace = (some composeLens GenLens[skuber.ext.Ingress](_.metadata.namespace)).set(namespace);
 
           fClusterIpServiceOpt = reconcile(kube, withClusterIp(oldClusterIpServiceOpt, setServiceOptNamespace(newClusterIpServiceOpt)));
           fNodePortServiceOpt = reconcile(kube, withClusterIp(oldNodePortServiceOpt, setServiceOptNamespace(newNodePortServiceOpt)));
@@ -1220,7 +1220,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       }else {
         Right(())
       };
-      podTemplateOriginal <- mks.mkPodTemplate(providerProperties, specProperties);
+      podTemplateOriginal <- keb.mkPodTemplate(providerProperties, specProperties);
       // restart policy can be OnFailure or Never for Jobs. Using Never here because it makes most sense for laser use case
       // deployments have restart policy Always at all times
       podTemplateWithRestartPolicy = podTemplateRestartPolicy.set(skuber.RestartPolicy.Never)(podTemplateOriginal);
