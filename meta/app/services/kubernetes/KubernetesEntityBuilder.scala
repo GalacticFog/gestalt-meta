@@ -348,13 +348,19 @@ trait KubernetesEntityBuilder {
 
   def mkLoadBalancerServiceSpec(providerProperties: KubernetesProviderProperties.Properties, specProperties: ContainerSpec): EitherError[Option[skuber.Service.Spec]] = {
     for(
+      _ <- if(specProperties.port_mappings.filter(_.lb_ip.isDefined).size > 1) {
+        Left(Error.BadRequest("Please set no more than one lb_ip per container"))
+      }else {
+        Right(())
+      };
       ports <- specProperties.port_mappings.filter(pm => pm.expose_endpoint == Some(true) && pm.`type` == Some("loadBalancer"))
        .map(_.copy(service_port = None)).toList.traverse(mkPort)
     ) yield {
       if(ports.size > 0) {
         Some(skuber.Service.Spec(
           ports = ports,
-          _type = skuber.Service.Type.LoadBalancer
+          _type = skuber.Service.Type.LoadBalancer,
+          loadBalancerIP = specProperties.port_mappings.find(_.lb_ip.isDefined).flatMap(_.lb_ip).getOrElse("")
         ))
       }else {
         None
