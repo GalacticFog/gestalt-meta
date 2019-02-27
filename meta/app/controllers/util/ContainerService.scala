@@ -347,7 +347,9 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
     log.debug(s"Found workspace: ${wrk.name}[${wrk.id}]")
 
-    val containerSpecsByProvider = ResourceFactory.findChildrenOfType(ResourceIds.Container, env.id) flatMap { r =>
+    val containers = ResourceFactory.findChildrenOfType(ResourceIds.Container, env.id)
+    val jobs = ResourceFactory.findChildrenOfType(migrations.V33.JOB_TYPE_ID, env.id)
+    val containerSpecsByProvider = (containers ++ jobs) flatMap { r =>
       val deserialised = ContainerSpec.fromResourceInstance(r)
       deserialised.failed foreach { throwable =>
         log.warn(s"Failed to deserialise container: $throwable")
