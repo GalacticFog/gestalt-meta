@@ -349,6 +349,8 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
     val containers = ResourceFactory.findChildrenOfType(ResourceIds.Container, env.id)
     val jobs = ResourceFactory.findChildrenOfType(migrations.V33.JOB_TYPE_ID, env.id)
+
+    log.debug(s"Found containers: $containers, $jobs")
     val containerSpecsByProvider = (containers ++ jobs) flatMap { r =>
       val deserialised = ContainerSpec.fromResourceInstance(r)
       deserialised.failed foreach { throwable =>
