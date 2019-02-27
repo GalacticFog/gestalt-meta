@@ -172,7 +172,8 @@ class ResourceController @Inject()(
       ResourceNotFound(ResourceIds.Provider, provider)
     }{ _ =>
       AuthorizeList("container.view") {
-        ResourceFactory.findDescendantsOfType(ResourceIds.Container, provider)
+        ResourceFactory.findDescendantsOfType(ResourceIds.Container, provider) ++
+          ResourceFactory.findDescendantsOfType(migrations.V33.JOB_TYPE_ID, provider)
       }
     }
   }
@@ -186,7 +187,8 @@ class ResourceController @Inject()(
          * TODO: This doesn't check if the container is a descendant of
          * the provider.
          */
-        ResourceFactory.findById(ResourceIds.Container, container).fold {
+        ResourceFactory.findById(ResourceIds.Container, container)
+          .orElse(ResourceFactory.findById(migrations.V33.JOB_TYPE_ID, container)).fold {
           ResourceNotFound(ResourceIds.Container, container)
         }{ c => Ok(RenderSingle(c)) }
       }
