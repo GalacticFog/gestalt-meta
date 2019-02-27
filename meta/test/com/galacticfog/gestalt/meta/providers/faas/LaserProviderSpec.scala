@@ -235,7 +235,7 @@ class LaserProviderSpec extends PlaySpecification with GestaltSecurityMocking wi
           "timeoutSecs" -> 30,
           "periodicInfo" -> Json.obj(),
           "headers" -> Json.obj(),
-          // "computePathOverride" -> "/1cdc1e6d-0366-4185-8eb2-45c44b36d3b9/environments/313627a5-4da5-4e66-a782-fdd447f4a8c8/containers",
+          // "computePathOverride" -> "/1cdc1e6d-0366-4185-8eb2-45c44b36d3b9/environments/313627a5-4da5-4e66-a782-fdd447f4a8c8/jobs",
           "secrets" -> Json.arr(Json.obj(
             "secret_id" -> s1.id,
             "path" -> "/mnt/dir",
@@ -440,7 +440,7 @@ class LaserProviderSpec extends PlaySpecification with GestaltSecurityMocking wi
       )
 
       val _ = Await.result(laserProvider.createLambda(testLambdaProvider, newTestLambda), 10 .seconds)
-      (r \ "artifactDescription" \ "computePathOverride").asOpt[String] must beSome(s"/${testOrg.name}/environments/${testEnv.id}/containers")
+      (r \ "artifactDescription" \ "computePathOverride").asOpt[String] must beSome(s"/${testOrg.name}/environments/${testEnv.id}/jobs")
     }
   }
 
