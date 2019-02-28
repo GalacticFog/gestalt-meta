@@ -124,6 +124,7 @@ package object api {
       case "workspaces"       => Some(ResourceIds.Workspace)
       case "environments"     => Some(ResourceIds.Environment)
       case "containers"       => Some(ResourceIds.Container)
+      case "jobs"             => Some(migrations.V33.JOB_TYPE_ID)
       case "lambdas"          => Some(ResourceIds.Lambda)
       case "secrets"          => Some(ResourceIds.Secret)
       case "apis"             => Some(ResourceIds.Api)

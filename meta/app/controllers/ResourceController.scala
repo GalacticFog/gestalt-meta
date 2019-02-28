@@ -12,8 +12,7 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceInfo, ResourceLabel, resourceInfoFormat}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
-import com.galacticfog.gestalt.security.play.silhouette.{
-  AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import controllers.util.JsonUtil._
@@ -29,7 +28,7 @@ import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
-import com.galacticfog.gestalt.data.{DataType,EnvironmentType,ResourceState,VisibilityType}
+import com.galacticfog.gestalt.data.EnvironmentType
 
 import play.api.mvc.Request
 import play.api.mvc.AnyContent
@@ -76,9 +75,10 @@ class ResourceController @Inject()(
   )
 
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
-    ResourceIds.Container   -> lookupContainer,
-    ResourceIds.Entitlement -> lookupEntitlement,
-    ResourceIds.Provider    -> lookupProvider
+    ResourceIds.Container       -> lookupContainer,
+    migrations.V33.JOB_TYPE_ID  -> lookupContainer,
+    ResourceIds.Entitlement     -> lookupEntitlement,
+    ResourceIds.Provider        -> lookupProvider
   )
 
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
@@ -408,7 +408,7 @@ class ResourceController @Inject()(
     log.debug(s"Authorizing lookup : user=${request.identity.account.id}, $action")
 
     Authorize(path.targetId.get, action) {
-
+      log.debug(s"Path info: ${path.info}")
       val resource = lookups.get(path.targetTypeId).fold {
         Resource.toInstance(path)
       }{ f=>
