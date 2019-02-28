@@ -299,23 +299,25 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
   val CAAS_PROVIDER_TIMEOUT_MS = 5000
 
   def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(Instance, Seq[ContainerInstance])]] = {
+    val resourceInstanceOpt = ResourceFactory.findChildOfType(parentId = environment, typeId = ResourceIds.Container, resourceId = containerId).orElse {
+      ResourceFactory.findChildOfType(parentId = environment, typeId = migrations.V33.JOB_TYPE_ID, resourceId = containerId)
+    }
+
     val maybeMetaContainer = for {
-      r <- ResourceFactory.findChildrenOfType(parentId = environment, typeId = ResourceIds.Container) find { _.id == containerId }
-      s <- ContainerSpec.fromResourceInstance(r).toOption
-    } yield (r -> s)
+      resourceInstance <- resourceInstanceOpt
+      containerSpec    <- ContainerSpec.fromResourceInstance(resourceInstance).toOption
+    } yield (resourceInstance, containerSpec)
 
     val fMaybeUpdate = (for {
       (metaContainer, metaContainerSpec) <- maybeMetaContainer
       provider <- Try { caasProvider(metaContainerSpec.provider.id) }.toOption
       caasProviderImpl <- providerManager.getProviderImpl(provider.typeId).toOption
-      ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainer))
+      ctx = ProviderContext(FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainer))
       stats = caasProviderImpl.find(ctx, metaContainer)
     } yield stats).getOrElse(Future.successful(None)) recover {
-
       case ce: java.net.ConnectException =>
         log.error("Error connecting to CaaS provider", ce)
         None
-
       case e: Throwable =>
         log.warn(s"error fetching stats for container ${containerId} from provider", e)
         None
@@ -349,6 +351,8 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
     val containers = ResourceFactory.findChildrenOfType(ResourceIds.Container, env.id)
     val jobs = ResourceFactory.findChildrenOfType(migrations.V33.JOB_TYPE_ID, env.id)
+
+    log.debug(s"Found containers: $containers, $jobs")
     val containerSpecsByProvider = (containers ++ jobs) flatMap { r =>
       val deserialised = ContainerSpec.fromResourceInstance(r)
       deserialised.failed foreach { throwable =>

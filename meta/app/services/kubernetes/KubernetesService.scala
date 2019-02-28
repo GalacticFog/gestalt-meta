@@ -29,6 +29,7 @@ import skuber.api.client._
 import skuber.ext._
 import skuber.rbac._
 import skuber.json.ext.format._
+import skuber.json.batch.format._
 import skuber.json.rbac.format._
 import skuber.json.format._
 
@@ -417,47 +418,102 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
+  trait ContainerLike[T] {
+    def getPodSpec(entity: T): Option[skuber.Pod.Spec]
+    def getTargetNumReplicas(entity: T): Option[Int]
+  }
+
+  implicit val deploymentContainerLike = new ContainerLike[skuber.ext.Deployment] {
+    def getPodSpec(entity: skuber.ext.Deployment): Option[skuber.Pod.Spec] = {
+      for(
+        spec <- entity.spec;
+        templateSpec <- spec.template;
+        podSpec <- templateSpec.spec
+      ) yield podSpec
+    }
+
+    def getTargetNumReplicas(entity: skuber.ext.Deployment): Option[Int] = {
+      for(
+        spec <- entity.spec;
+        replicas <- spec.replicas
+      ) yield replicas
+    }
+  }
+
+  implicit val jobContainerLike = new ContainerLike[skuber.batch.Job] {
+    def getPodSpec(entity: skuber.batch.Job): Option[skuber.Pod.Spec] = {
+      for(
+        spec <- entity.spec;
+        templateSpec <- spec.template;
+        podSpec <- templateSpec.spec
+      ) yield podSpec
+    }
+
+    def getTargetNumReplicas(entity: skuber.batch.Job): Option[Int] = {
+      for(
+        spec <- entity.spec;
+        parallelism <- spec.parallelism
+      ) yield parallelism
+    }
+  }
+
+  object ContainerLike {
+    def apply[T : ContainerLike]: ContainerLike[T] = implicitly[ContainerLike[T]]
+  }
+
   def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
-    log.debug("find(_,_)")
-    lazy val deplSplitter = "/namespaces/([^/]+)/deployments/(.*)".r
-    ContainerService.resourceExternalId(container) match {
-      case Some(deplSplitter(namespace,deploymentName)) =>
-        cleanly(context.provider, namespace)( kube =>
-          for {
-            maybeDeployment <- kube.getOption[Deployment](deploymentName)
-            allPods <- maybeDeployment match {
-              case None    => Future.successful(Nil)
-              case Some(_) => kube.list[PodList]() map (_.items)
-            }
-            allReplicaSets <- maybeDeployment match {
-              case None    => Future.successful(Nil)
-              case Some(_) => kube.list[ReplicaSetList]() map (_.items)
-            }
-            allEvents <- maybeDeployment match {
-              case None    => Future.successful(Nil)
-              case Some(_) => kube.list[EventList]() map (_.items)
-            }
-            allServices <- maybeDeployment match {
-              case None    => Future.successful(None)
-              case Some(_) => kube.list[ServiceList]().map {
-                _.items.find(_.spec.exists(_._type == Service.Type.LoadBalancer))
+    def findPod[T <: skuber.ObjectResource : skuber.ResourceDefinition : Format : ContainerLike](): Future[Option[ContainerStats]] = {
+      val rd = implicitly[skuber.ResourceDefinition[T]]
+      lazy val entitySplitter = s"/namespaces/([^/]+)/${rd.spec.names.plural}/(.*)".r
+      ContainerService.resourceExternalId(container) match {
+        case Some(entitySplitter(namespace, entityName)) =>
+          cleanly(context.provider, namespace)( kube =>
+            for {
+              maybeEntity <- kube.getOption[T](entityName)
+              allPods <- maybeEntity match {
+                case None    => Future.successful(Nil)
+                case Some(_) => kube.list[PodList]() map (_.items)
               }
-            }
+              allReplicaSets <- maybeEntity match {
+                case None    => Future.successful(Nil)
+                case Some(_) => kube.list[ReplicaSetList]() map (_.items)
+              }
+              allEvents <- maybeEntity match {
+                case None    => Future.successful(Nil)
+                case Some(_) => kube.list[EventList]() map (_.items)
+              }
+              allServices <- maybeEntity match {
+                case None    => Future.successful(None)
+                case Some(_) => kube.list[ServiceList]().map {
+                  _.items.find(_.spec.exists(_._type == Service.Type.LoadBalancer))
+                }
+              }
 
-            replicaSets = allReplicaSets.filter(_.metadata.ownerReferences.exists(owner =>
-              (owner.kind == "Deployment") && owner.uid == maybeDeployment.get.metadata.uid))
+              replicaSets = allReplicaSets.filter(_.metadata.ownerReferences.exists(owner =>
+                (owner.kind == rd.spec.names.kind) && owner.uid == maybeEntity.get.metadata.uid))
 
-            pods = allPods.filter(_.metadata.ownerReferences.exists(owner =>
-              (owner.kind == "ReplicaSet") && replicaSets.exists(_.metadata.uid == owner.uid)))
+              pods = allPods.filter(_.metadata.ownerReferences.exists(owner =>
+                (owner.kind == "ReplicaSet") && replicaSets.exists(_.metadata.uid == owner.uid)))
 
-            services = allServices.filter(service =>service.spec.isDefined &&
-              (service.spec.get.selector.toSet diff maybeDeployment.get.metadata.labels.toSet).isEmpty)
+              services = allServices.filter(service =>service.spec.isDefined &&
+                (service.spec.get.selector.toSet diff maybeEntity.get.metadata.labels.toSet).isEmpty)
 
-            update = maybeDeployment map (kubeDeplAndPodsToContainerStatus(_, pods, services, allEvents))
-          } yield update
-        )
-      case Some(externalId) => Future.failed(throw new RuntimeException(s"Invalid external_id: $externalId"))
-      case None => Future.successful(None)
+              update = maybeEntity map (kubeDeplAndPodsToContainerStatus(_, pods, services, allEvents))
+            } yield update
+          )
+        case Some(externalId) => Future.failed(throw new RuntimeException(s"Invalid external_id: $externalId"))
+        case None => Future.successful(None)
+      }
+    }
+
+    log.debug("find(_,_)")
+    if(container.typeId == ResourceIds.Container) {
+      findPod[skuber.ext.Deployment]()
+    }else if(container.typeId == migrations.V33.JOB_TYPE_ID) {
+      findPod[skuber.batch.Job]()
+    }else {
+      log.error(s"Unknown resource type: ${container.typeId}")
+      Future.successful(None)
     }
   }
 
@@ -479,16 +535,18 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           val envSelector = new LabelSelector(LabelSelector.IsEqualRequirement("meta/environment", context.environment.id.toString))
 
           val fDepls = kube.listSelected[DeploymentList](envSelector)
+          val fJobs = kube.listSelected[skuber.batch.JobList](envSelector)
           // val fAllPods = kube.listSelected[PodList](envSelector)
           // val fAllServices = kube.listSelected[ServiceList](envSelector)
           val fAllEvents = kube.listSelected[EventList](envSelector)
           for {
             depls <- fDepls
+            jobs <- fJobs
             // allPods <- fAllPods
             // allServices <- fAllServices
             allEvents <- fAllEvents map (_.items)
             // _ = log.debug(s"listInEnvironment returned ${depls.size} deployments, ${allPods.size} pods, ${allEvents.size} events")
-            _ = log.debug(s"${namespace}: listInEnvironment returned ${depls.size} deployments, ${allEvents.size} events")
+            _ = log.debug(s"${namespace}: listInEnvironment returned ${depls.size} deployments, ${jobs.size} jobs, ${allEvents.size} events")
             // stats = depls flatMap { depl =>
               // depl.metadata.labels.get(META_CONTAINER_KEY) map { id =>
               //   val thesePods = listByLabel[Pod,PodList](allPods, META_CONTAINER_KEY -> id)
@@ -498,7 +556,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
               // }
             // }
             deplsWithSelector = depls filter { depl => depl.spec.flatMap(_.selector).isDefined }
-            stats <- Future.traverse(deplsWithSelector) { depl =>
+            deplStats <- Future.traverse(deplsWithSelector) { depl =>
               val selector = depl.spec.flatMap(_.selector).get
               val fPods = kube.listSelected[PodList](selector)
               val fServices = kube.listSelected[ServiceList](selector)
@@ -512,7 +570,19 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
                 kubeDeplAndPodsToContainerStatus(depl, pods, lbs, allEvents)
               }
             }
-          } yield stats.toSeq
+            jobsWithSelector = jobs filter { job => job.spec.flatMap(_.selector).isDefined }
+            jobStats <- Future.traverse(jobsWithSelector) { job =>
+              val selector = job.spec.flatMap(_.selector).get
+              val fPods = kube.listSelected[PodList](selector)
+              for(
+                pods <- fPods
+              ) yield {
+                val id = job.metadata.labels.get(META_CONTAINER_KEY).getOrElse(s"name=${job.name}")
+                log.debug(s"job for container ${id} selected ${pods.size} pods")
+                kubeDeplAndPodsToContainerStatus(job, pods, None, allEvents)
+              }
+            }
+          } yield (deplStats ++ jobStats).toSeq
         }
         stats.map(_.flatten)
       }
@@ -525,13 +595,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       DateTimeZone.forTimeZone(TimeZone.getTimeZone(timestamp.getZone())))
   }
 
-  private[this] def kubeDeplAndPodsToContainerStatus(depl: Deployment, pods: List[Pod], maybeLbSvc: Option[Service], events : List[Event] = Nil): ContainerStats = {
+  private[this] def kubeDeplAndPodsToContainerStatus[T <: skuber.ObjectResource : skuber.ResourceDefinition : ContainerLike](
+   depl: T, pods: List[Pod], maybeLbSvc: Option[Service], events : List[Event] = Nil): ContainerStats = {
     // meta wants: SCALING, SUSPENDED, RUNNING, HEALTHY, UNHEALTHY
     // kube provides: waiting, running, terminated
+
+    val rd = implicitly[skuber.ResourceDefinition[T]]
+
     val containerStates = pods.flatMap(_.status.toSeq).flatMap(_.containerStatuses.headOption).flatMap(_.state)
     val podNames = pods.map(_.name)
     val numRunning = containerStates.count(_.isInstanceOf[skuber.Container.Running])
-    val numTarget  = depl.spec.flatMap(_.replicas).getOrElse(numRunning) // TODO: don't really know what to do if this doesn't exist
+    val numTarget  = ContainerLike[T].getTargetNumReplicas(depl).getOrElse(numRunning) // TODO: don't really know what to do if this doesn't exist
     val lbAddress = maybeLbSvc.flatMap(_.status).flatMap(_.loadBalancer).flatMap(_.ingress.headOption).flatMap(
       i => i.hostName orElse i.ip
     )
@@ -539,14 +613,14 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     else if (numRunning == 0 && 0 == numTarget) "SUSPENDED"
     else if (numRunning == numTarget) "RUNNING"
     else "UNKNOWN"
-    val specImage = depl.getPodSpec.flatMap(_.containers.headOption).map(_.image).getOrElse("")
+    val specImage = ContainerLike[T].getPodSpec(depl).flatMap(_.containers.headOption).map(_.image).getOrElse("")
     val age = depl.metadata.creationTimestamp map skuberTimestampToJodaDateTime
     val hostPorts = (for {
-      podspec <- depl.getPodSpec
+      podspec <- ContainerLike[T].getPodSpec(depl)
       container <- podspec.containers.headOption
       hostPorts = container.ports.flatMap(_.hostPort)
     } yield hostPorts) getOrElse Seq.empty
-    val resources = depl.spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)
+    val resources = ContainerLike[T].getPodSpec(depl).flatMap(_.containers.headOption).flatMap(_.resources)
     val taskStats = pods.map {
       pod =>
         ContainerStats.TaskStat(
@@ -566,7 +640,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val containerStateStats = (pods flatMap containerStateStatFromPodContainerStates) ++ (pods flatMap containerStateStatFromPodConditions)
 
     ContainerStats(
-      external_id = s"/namespaces/${depl.namespace}/deployments/${depl.name}",
+      external_id = s"/namespaces/${depl.metadata.namespace}/${rd.spec.names.plural}/${depl.name}",
       containerType = "DOCKER",
       status = status,
       cpus = (resources.flatMap(_.limits.get("cpu")) orElse resources.flatMap(_.requests.get("cpu")))
@@ -1204,7 +1278,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   def createJob(context: ProviderContext, metaResource: Instance) (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     import KubernetesProviderProperties.Implicits._
-    import skuber.json.batch.format._
     import monocle.std.option._
 
     val podTemplateRestartPolicy = GenLens[skuber.Pod.Template.Spec](_.spec) composePrism some composeLens
@@ -1216,7 +1289,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       providerResource <- eitherFrom[Error.NotFound].option(ResourceFactory.findById(context.providerId), s"Provider not found: ${context.providerId}");
       providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](providerResource);
       _ <- if(specProperties.num_instances > 1) {
-        Left(Error.BadRequest("Setting num_replicas > 1 is not allowed for jobs"))
+        Left(Error.BadRequest("Setting num_instances > 1 is not allowed for jobs"))
       }else {
         Right(())
       };
@@ -1264,8 +1337,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
   
   def destroyJob(job: GestaltResourceInstance): Future[Unit] = {
-    import skuber.json.batch.format._
-    
     val provider = ContainerService.containerProvider(job)
 
     val namespace = getNamespaceForResource[skuber.batch.Job](job)

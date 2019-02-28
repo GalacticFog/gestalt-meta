@@ -162,23 +162,23 @@ case object ContainerSpec extends Spec {
 
   def fromResourceInstance(metaContainer: GestaltResourceInstance): Try[ContainerSpec] = {
     if (metaContainer.typeId != ResourceIds.Container && metaContainer.typeId != migrations.V33.JOB_TYPE_ID) {
-      return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
-    }
-    // log.debug(s"loading Container from Resource ${metaContainer.id}")
-    val created: Option[DateTime] = for {
-      c <- metaContainer.created
-      ts <- c.get("timestamp")
-      parsedTimestamp <- Try{DateTime.parse(ts)}.toOption
-    } yield parsedTimestamp
+      Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
+    } else {
+      val created: Option[DateTime] = for {
+        c <- metaContainer.created
+        ts <- c.get("timestamp")
+        parsedTimestamp <- Try{DateTime.parse(ts)}.toOption
+      } yield parsedTimestamp
 
-    ResourceSerde.deserialize[ContainerSpec](metaContainer).liftTo[Try] map { containerSpec =>
-      containerSpec.copy(
-        name=metaContainer.name,
-        description=metaContainer.description,
-        created=created
-      )
-    } recoverWith { case e: Throwable =>
-      Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into ContainerSpec: ${e.getMessage}"))
+      ResourceSerde.deserialize[ContainerSpec](metaContainer).liftTo[Try] map { containerSpec =>
+        containerSpec.copy(
+          name=metaContainer.name,
+          description=metaContainer.description,
+          created=created
+        )
+      } recoverWith { case e: Throwable =>
+        Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into ContainerSpec: ${e.getMessage}"))
+      }
     }
   }
 
