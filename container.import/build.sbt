@@ -6,7 +6,7 @@ name := """container.import"""
 
 libraryDependencies ++= Seq(
   // "com.galacticfog"   %% "gestalt-caas-kube"    % "0.3.6-SNAPSHOT" withSources(),
-  "com.galacticfog"   %% "gestalt-caas-kube"    % "0.3.7-eb8a6957-SNAPSHOT" withSources(),
+  "com.galacticfog"   %% "gestalt-caas-kube"    % "0.3.7-5ea97ae9-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-meta-repository" % "0.8.5" withSources(),
   // "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.4.5-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.4.7" withSources(),

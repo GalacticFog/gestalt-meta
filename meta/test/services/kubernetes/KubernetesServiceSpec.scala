@@ -2028,48 +2028,47 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
-    // fails to detect mock on listSelected for some reason
-    // "set appropriate host port on container tasks when host port is requested" in new FakeKubeCreate(
-    //   port_mappings = Seq(ContainerSpec.PortMapping("web", Some(9000), Some(80)))
-    // ) {
-    //   import com.galacticfog.gestalt.meta.api.ContainerStats
+    "set appropriate host port on container tasks when host port is requested" in new FakeKubeCreate(
+      port_mappings = Seq(ContainerSpec.PortMapping("web", Some(9000), Some(80)))
+    ) {
+      import com.galacticfog.gestalt.meta.api.ContainerStats
 
-    //   val Some(containerStats) = await(testSetup.svc.find(
-    //     context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-    //     container = metaContainer
-    //   ))
+      val Some(containerStats) = await(testSetup.svc.find(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
 
-    //   val Seq(containerStats2) = await(testSetup.svc.listInEnvironment(
-    //     context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
-    //   ))
+      val Seq(containerStats2) = await(testSetup.svc.listInEnvironment(
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
+      ))
 
-    //   containerStats.tasksRunning must_== 2
-    //   containerStats.taskStats must beSome(containTheSameElementsAs(Seq(
-    //     ContainerStats.TaskStat(
-    //       id = "test-container-hash-a",
-    //       host = "host-a",
-    //       ipAddresses = Some(Seq(ContainerStats.TaskStat.IPAddress(
-    //         ipAddress = "10.10.10.1",
-    //         protocol = "IPv4"
-    //       ))),
-    //       ports = Seq(80),
-    //       startedAt = Some(startA.toString)
-    //     ),
-    //     ContainerStats.TaskStat(
-    //       id = "test-container-hash-b",
-    //       host = "host-b",
-    //       ipAddresses = Some(Seq(ContainerStats.TaskStat.IPAddress(
-    //         ipAddress = "10.10.10.2",
-    //         protocol = "IPv4"
-    //       ))),
-    //       ports = Seq(80),
-    //       startedAt = Some(startB.toString)
-    //     )
-    //   )))
+      containerStats.tasksRunning must_== 2
+      containerStats.taskStats must beSome(containTheSameElementsAs(Seq(
+        ContainerStats.TaskStat(
+          id = "test-container-hash-a",
+          host = "host-a",
+          ipAddresses = Some(Seq(ContainerStats.TaskStat.IPAddress(
+            ipAddress = "10.10.10.1",
+            protocol = "IPv4"
+          ))),
+          ports = Seq(80),
+          startedAt = Some(startA.toString)
+        ),
+        ContainerStats.TaskStat(
+          id = "test-container-hash-b",
+          host = "host-b",
+          ipAddresses = Some(Seq(ContainerStats.TaskStat.IPAddress(
+            ipAddress = "10.10.10.2",
+            protocol = "IPv4"
+          ))),
+          ports = Seq(80),
+          startedAt = Some(startB.toString)
+        )
+      )))
 
-    //   containerStats must_== containerStats2
-    //   there were two(testSetup.client).close
-    // }
+      containerStats must_== containerStats2
+      there were two(testSetup.client).close
+    }.pendingUntilFixed("fails to detect mock on listSelected for some reason")
 
     "delete service and any ingress on container delete" in new FakeKube {
       val Success(metaContainer) = createInstance(

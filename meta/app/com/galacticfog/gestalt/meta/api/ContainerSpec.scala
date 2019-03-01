@@ -91,7 +91,9 @@ case object ContainerSpec extends Spec {
                          virtual_hosts: Option[Seq[String]] = None,
                          lb_port: Option[Int] = None,
                          `type`: Option[String] = None,
-                         lb_address: Option[ServiceAddress] = None )
+                         lb_address: Option[ServiceAddress] = None,
+                         lb_ip: Option[String] = None     // only for kubernetes, only one per ContainerSpec
+                       )
 
   sealed trait VolumeMountSpec {
     def mount_path: String
@@ -225,7 +227,8 @@ case object ContainerSpec extends Spec {
       (__ \ "virtual_hosts").readNullable[Seq[String]] and
       (__ \ "lb_port").readNullable[Int](max(65535) andKeep min(0)) and
       (__ \ "type").readNullable[String](verifying(Set("internal","external","loadBalancer").contains(_))) and
-      (__ \ "lb_address").readNullable[ServiceAddress]
+      (__ \ "lb_address").readNullable[ServiceAddress] and
+      (__ \ "lb_ip").readNullable[String]
     )(ContainerSpec.PortMapping.apply _)
 
   implicit val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]

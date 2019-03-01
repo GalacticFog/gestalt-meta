@@ -1466,5 +1466,80 @@ class KubernetesEntityBuilderSpec extends PlaySpecification with ResourceScope w
       keb.mkNodePortServiceSpec(pp, sp) === Right(None)
       keb.mkLoadBalancerServiceSpec(pp, sp) === Right(None)
     }
+
+    "create service spec with loadBalancerIp and labels" in {
+      val container = newInstance(
+        ResourceIds.Container,
+        "test-container",
+        properties = Some(Map(
+          "name" -> "test-container",
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testK8SProvider.id
+          ).toString,
+          "num_instances" -> "1",
+          "port_mappings" -> Json.arr(
+            Json.obj(
+              "protocol" -> "tcp",
+              "container_port" -> 443,
+              "expose_endpoint" -> true,
+              "name" -> "ep1",
+              "type" -> "internal"
+            ),
+            Json.obj(
+              "protocol" -> "tcp",
+              "container_port" -> 444,
+              "lb_port" -> 8444,
+              "expose_endpoint" -> true,
+              "name" -> "ep2",
+              "type" -> "loadBalancer",
+              "lb_ip" -> "100.200.10.20"
+            )
+          ).toString,
+          "env" -> "{}",
+          "network" -> "",
+          "secrets" -> "[]"
+        ))
+      )
+      val (pp, sp) = deserializeProperties[ContainerSpec](testK8SProvider, container).right.get
+
+      keb.mkClusterIpServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
+        ports = List(
+          skuber.Service.Port(
+            name = "ep1",
+            port = 443,
+            targetPort = Some(Left(443))
+          ),
+          skuber.Service.Port(
+            name = "ep2",
+            port = 8444,
+            targetPort = Some(Left(444))
+          )
+        ),
+        _type = skuber.Service.Type.ClusterIP
+      )))
+      keb.mkNodePortServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
+        ports = List(
+          skuber.Service.Port(
+            name = "ep2",
+            port = 8444,
+            targetPort = Some(Left(444))
+          )
+        ),
+        _type = skuber.Service.Type.NodePort
+      )))
+      keb.mkLoadBalancerServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
+        ports = List(
+          skuber.Service.Port(
+            name = "ep2",
+            port = 8444,
+            targetPort = Some(Left(444))
+          )
+        ),
+        _type = skuber.Service.Type.LoadBalancer,
+        loadBalancerIP = "100.200.10.20"
+      )))
+    }
   }
 }
