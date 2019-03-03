@@ -96,6 +96,32 @@ import play.api.libs.json._
     }
   }
 
+//  object CompareBooleanToArray extends Compare[JsValue, JsArray] {
+//    private val log = Logger(this.getClass)
+//    
+//    def fromJsBool(jsb: JsValue) = {
+//      println("***" + jsb)
+//      jsb match {
+//        case JsBoolean(true) => true
+//        case JsBoolean(false) => false
+//        case _ => throw new RuntimeException(s"Not a boolean value.")
+//      }
+//    }
+//    
+//    def compare(a: JsValue, b: JsArray, op: String) = {  
+////      val a1 = fromJsBool(a)
+//      val b1 = b.as[Seq[JsValue]] //.map(fromJsBool)
+//      
+//      op.trim.toLowerCase match {
+//        case "inlist" => {
+//          b1.contains(a)
+//        }
+//        case _ => throw new IllegalArgumentException(s"Invalid comparison: '$op'")
+//      }
+//    }
+//    
+//  }
+  
 object CompareArrayToArray extends Compare[JsArray, JsArray] {
   private val log = Logger(this.getClass)
   
@@ -107,65 +133,66 @@ object CompareArrayToArray extends Compare[JsArray, JsArray] {
     op.trim.toLowerCase match {
       case "inlist" => {
         log.debug(s"${a1} exists_in ${b1}")
-        (a1 diff b1).isEmpty //b1.diff(a1).isEmpty
+        (a1 diff b1).isEmpty
       }
-      case _        => throw new IllegalArgumentException(s"Invalid comparison: '$op'")
+      case _ => throw new IllegalArgumentException(s"Invalid comparison: '$op'")
     }
   }
 }
 
-object CompareSingleToArray extends Compare[JsArray, JsValue] {
-  val log = Logger(this.getClass)
+  object CompareSingleToArray extends Compare[JsArray, JsValue] {
+    val log = Logger(this.getClass)
+    
+    def compare(a: JsArray, b: JsValue, op: String) = {
+      log.debug("Testing : %s %s %s".format(a.toString, op, b.toString))
+      val a1 = a.as[Seq[JsValue]]
   
-  def compare(a: JsArray, b: JsValue, op: String) = {
-    log.debug("Testing : %s %s %s".format(a.toString, op, b.toString))
-    val a1 = a.as[Seq[JsValue]]
-
-    op.trim.toLowerCase match {
-      case "contains" => a1 contains b
-      case "inlist"   => a1 contains b
-      case "oneof"    => a1 contains b
-      case "except"   => !(a1 contains b)
-      case _          => throw new IllegalArgumentException(s"Invalid comparison: '$op'")
-    }
-  }
-}
-object CompareSingleNumeric extends Compare[JsNumber, JsNumber] {
-
-  def compare(a: JsNumber, b: JsNumber, op: String): Boolean = {
-
-    val a1 = a.value
-    val b1 = b.value
-
-    op.trim.toLowerCase match {
-      case "equals" => a1 == b1
-      case "==" => a1 == b1
-      case "!=" => a1 != b1
-      case "<=" => a1 <= b1
-      case ">=" => a1 >= b1
-      case ">"  => a1 > b1
-      case "<"  => a1 < b1
-      case _ => throw new IllegalArgumentException(s"Invalid comparison op: '$op'")
-    }
-  }
-}
-
-object CompareSingle extends Compare[JsValue, JsValue] {
-  def compare(a: JsValue, b: JsValue, op: String) = {
-    op.trim.toLowerCase match {
-      case "=="         => a == b
-      case "equals"     => a == b
-      case "!="         => a != b
-      case "startswith" => {
-        println(s"${a.as[String]} startsWith ${b.as[String]} : ${a.as[String] startsWith b.as[String]}" )
-        a.as[String] startsWith b.as[String]
+      op.trim.toLowerCase match {
+        case "contains" => a1 contains b
+        case "inlist"   => a1 contains b
+        case "oneof"    => a1 contains b
+        case "except"   => !(a1 contains b)
+        case _          => throw new IllegalArgumentException(s"Invalid comparison: '$op'")
       }
-      case "contains"   => a.as[String] contains b.as[String]
-      case "endswith"   => a.as[String] endsWith b.as[String]
-      case _ => throw new IllegalArgumentException(s"Invalid comparison op: '$op'")
     }
   }
-}
+
+  object CompareSingleNumeric extends Compare[JsNumber, JsNumber] {
+  
+    def compare(a: JsNumber, b: JsNumber, op: String): Boolean = {
+  
+      val a1 = a.value
+      val b1 = b.value
+  
+      op.trim.toLowerCase match {
+        case "equals" => a1 == b1
+        case "==" => a1 == b1
+        case "!=" => a1 != b1
+        case "<=" => a1 <= b1
+        case ">=" => a1 >= b1
+        case ">"  => a1 > b1
+        case "<"  => a1 < b1
+        case _ => throw new IllegalArgumentException(s"Invalid comparison op: '$op'")
+      }
+    }
+  }
+  
+  object CompareSingle extends Compare[JsValue, JsValue] {
+    def compare(a: JsValue, b: JsValue, op: String) = {
+      op.trim.toLowerCase match {
+        case "=="         => a == b
+        case "equals"     => a == b
+        case "!="         => a != b
+        case "startswith" => {
+          println(s"${a.as[String]} startsWith ${b.as[String]} : ${a.as[String] startsWith b.as[String]}" )
+          a.as[String] startsWith b.as[String]
+        }
+        case "contains"   => a.as[String] contains b.as[String]
+        case "endswith"   => a.as[String] endsWith b.as[String]
+        case _ => throw new IllegalArgumentException(s"Invalid comparison op: '$op'")
+      }
+    }
+  }
   
   object CompareString extends Compare[String,String] {
     private val log = Logger(this.getClass)

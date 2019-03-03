@@ -252,10 +252,11 @@ trait LaserTransformationMigrationV7 {
       )
     )
   }
-
 }
 
+
 import com.galacticfog.gestalt.meta.genericactions._
+
 
 class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) extends MetaMigration
  with AuthorizationMethods with LaserTransformationMigrationV7 {
@@ -312,6 +313,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
             acc push "Adding StreamProvider Resource Type to /root/resourcetypes"
             addStreamProviderType(root.id, creator)
           }
+          
           _ <- {
             acc push "Creating StreamProvider instance in /root/providers"
             val actions = Seq(
@@ -319,8 +321,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
                   "streamspec.update", 
                   "streamspec.delete", 
                   "streamspec.start", 
-                  "streamspec.stop"/*, 
-                  "streamspec.restart"*/)
+                  "streamspec.stop")
                   
             createStreamProviderInstance(root.id, env.id, lam.id, actions, creator, payload.get, lamProvider)
           }
@@ -794,6 +795,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
   }
   
   private[migrations] def addStreamSpecType(org: UUID, creator: GestaltResourceInstance) = {
+
     if (TypeFactory.findById(STREAM_SPEC_TYPE_ID).isDefined) {
       acc push s"ResourceType '${STREAM_SPEC_TYPE_NAME}' already exists"
       Success(())
@@ -838,10 +840,9 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
       setTypeLineage(newtype, creator)
     }
   }
- 
-  
 
 }
+
 
 object V7 {
   val DATA_FEED_TYPE_ID = UUID.fromString("8f875ffc-69ff-48c8-9d6d-f3622b7b1062")

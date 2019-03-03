@@ -133,10 +133,10 @@ package object policy {
     rule: GestaltResourceInstance,
     effect: Option[String],
     opts: RequestOptions): Either[String, Unit] = {
-    
+
     val json = Output.renderInstance(target)
     val predicate = toPredicate(rule.properties.get("eval_logic"))
-    val path = dot2slash(predicate.property) //.split("""\.""").drop(1).mkString("/")
+    val path = dot2slash(predicate.property)
     
     log.debug(s"Property path: $path")
     log.debug(s"Predicate.Property : ${predicate.property}")
@@ -158,8 +158,8 @@ package object policy {
     testValue.fold(missingProperty(rule, predicate)) { test =>
       if (compareJson(test, predicate)) Right(()) else Left(predicate.toString)
     }
-
   }
+  
   
   def isStrict(rule: GestaltResourceInstance) = {
     rule.properties.get.get("strict").map(_.toBoolean) getOrElse false
@@ -173,11 +173,9 @@ package object policy {
     } else Right(())
   }
   
-  
   def isNegativeOp(op: String): Boolean = {
     op.startsWith("!") || op.startsWith("not")
   }
-  
   
   def compareJson[T](test: JsValue, predicate: Predicate[T]) = {
     val value = toJsValue(predicate.value.toString)
@@ -193,9 +191,15 @@ package object policy {
         CompareSingleNumeric.compare(test.as[JsNumber], value.as[JsNumber], predicate.operator)
       case (JsArray(_), JsArray(_))     => 
         CompareArrayToArray.compare(test.as[JsArray], value.as[JsArray], predicate.operator)
+        
+//      case (JsBoolean(_), JsArray(_))   => 
+//        CompareBooleanToArray.compare(test, value.as[JsArray], predicate.operator)
+      
       case (jsvalue, JsArray(_))        => 
         CompareSingleToArray.compare(value.as[JsArray], jsvalue, predicate.operator)
-      case _ => throw new RuntimeException(s"Unhandled comparison. found: (${test.getClass.getSimpleName}, ${value.getClass.getSimpleName})")
+
+      case _ => throw new RuntimeException(
+                  s"Unhandled comparison. found: (${test.getClass.getSimpleName}, ${value.getClass.getSimpleName})")
     }
   }
 

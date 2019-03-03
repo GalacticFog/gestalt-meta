@@ -231,10 +231,10 @@ trait ResourceScope extends Scope with Mockito {
   import play.api.libs.json._
   
   def createEventPolicy(
-      parent: UUID,  
-      lambda: UUID,
-      matchActions: Seq[JsValue],
-      org: UUID = dummyRootOrgId) = {
+                        parent: UUID,  
+                        lambda: UUID,
+                        matchActions: Seq[JsValue],
+                        org: UUID = dummyRootOrgId) = {
     
     val output = createInstance(ResourceIds.Policy,
         org = org,
@@ -369,7 +369,13 @@ trait ResourceScope extends Scope with Mockito {
     AuthAccountWithCreds(account, Seq(), Seq(), credentials, uuid())
   }
   
-  def createPolicyRule(parent: UUID, ruleType: UUID = ResourceIds.RuleLimit, action: String = "foo.bar", org: UUID = dummyRootOrgId) = {
+  def createPolicyRule(
+                       parent: UUID, 
+                       ruleType: UUID = ResourceIds.RuleLimit, 
+                       action: String = "foo.bar", 
+                       org: UUID = dummyRootOrgId,
+                       ruleProps: Map[String,String] = Map.empty) = {
+    
     val output = createInstance(ResourceIds.Policy,
         org = org,
         name = uuid,
@@ -382,8 +388,8 @@ trait ResourceScope extends Scope with Mockito {
             parent = Option(policy.id),
             properties = Option(Map(
                 "match_actions"    -> Json.toJson(List(action)).toString,
-                "defined_at" -> "foo",
-                "parent"     -> policy.id.toString)))
+                "defined_at" -> "foo", // <- TODO: This should reflect policy parent.
+                "parent"     -> policy.id.toString) ++ ruleProps))
         (policy.id, rule.get.id)
     }
     output.get
@@ -435,7 +441,12 @@ trait ResourceScope extends Scope with Mockito {
 
   
   
-  def createWorkspaceEnvironment(org: UUID = dummyRootOrgId, workspaceProps: Map[String,String] = Map(), environmentProps: Map[String,String] = Map(), wrkName: String = uuid(), envName: String = uuid()): (UUID,UUID) = {
+  def createWorkspaceEnvironment(
+                                 org: UUID = dummyRootOrgId, 
+                                 workspaceProps: Map[String,String] = Map(), 
+                                 environmentProps: Map[String,String] = Map(), 
+                                 wrkName: String = uuid(), 
+                                 envName: String = uuid()): (UUID,UUID) = {
 
     val wrk1 = createInstance(ResourceIds.Workspace, wrkName,
         org = org,
@@ -586,6 +597,8 @@ trait ResourceScope extends Scope with Mockito {
       properties: Option[Hstore] = None,
       description: Option[String] = None ): Instance = {
 
+    val state = ResourceState.id(ResourceStates.Active)
+    
     GestaltResourceInstance(
       id = id,
       typeId = typeId,
@@ -593,7 +606,7 @@ trait ResourceScope extends Scope with Mockito {
       owner = owner,
       name = name,
       description = description,
-      state = ResourceState.id(ResourceStates.Active),
+      state = state,
       properties = properties)
   }
   
