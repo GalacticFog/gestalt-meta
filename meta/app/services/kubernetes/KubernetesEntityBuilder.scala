@@ -161,6 +161,11 @@ trait KubernetesEntityBuilder {
       }else {
         Right(Map.empty[String,skuber.Resource.Quantity])
       };
+      nodeSelector = if(gpuConstraints.isEmpty) {
+        Map.empty[String,String]
+      }else {
+        providerProperties.config.gpu_default_node_selector
+      };
       resourceRequirements = skuber.Resource.Requirements(
         requests = (cpuConstraints.getOrElse(KubernetesProviderProperties.Request, Map.empty)
          ++ memoryConstraints.getOrElse(KubernetesProviderProperties.Request, Map.empty)),
@@ -293,7 +298,8 @@ trait KubernetesEntityBuilder {
           skuber.LocalObjectReference(DEFAULT_SECRET_NAME(3)),
           skuber.LocalObjectReference(DEFAULT_SECRET_NAME(4)),
           skuber.LocalObjectReference(DEFAULT_SECRET_NAME(5))
-        )
+        ),
+        nodeSelector = nodeSelector
       )
       skuber.Pod.Template.Spec(spec = Some(pod))
     }
