@@ -2165,6 +2165,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
       val assignedNodePort81 = 33334
 
+      testSetup.client.listSelected(any)(any,meq(skuber.ext.Ingress.ingListDef),any) returns Future.successful(new skuber.ext.IngressList("","",None,List()))
+      // testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
       testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
       testSetup.client.create(argThat((_:Service).name == metaContainer.name))(any,meq(Service.svcDef),any) returns Future.successful({
         mockSvc(namespace = s"${testEnv.id}").setPorts(List(
@@ -2273,7 +2275,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           )
         )) {
 
-      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(Some(skuber.ext.Ingress(metaContainer.name)))
+      testSetup.client.listSelected(any)(any,meq(skuber.ext.Ingress.ingListDef),any) returns Future.successful(new skuber.ext.IngressList("","",None,List(skuber.ext.Ingress(metaContainer.name))))
+      // testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(Some(skuber.ext.Ingress(metaContainer.name)))
       testSetup.client.delete(meq(metaContainer.name),any)(meq(Ingress.ingDef),any) returns Future.successful(())
 
       val newPortMappings = Seq(
@@ -2331,7 +2334,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         )
       )) {
 
-      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
+      testSetup.client.listSelected(any)(any,meq(skuber.ext.Ingress.ingListDef),any) returns Future.successful(new skuber.ext.IngressList("","",None,List()))
+      // testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(
@@ -2376,7 +2380,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       )
     )) {
 
-      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
+      testSetup.client.listSelected(any)(any,meq(skuber.ext.Ingress.ingListDef),any) returns Future.successful(new skuber.ext.IngressList("","",None,List()))
+      // testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(
@@ -3424,7 +3429,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         `type` = Some("external")
       )
     )) {
-      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(Some(mock[skuber.ext.Ingress]))
+      testSetup.client.listSelected(any)(any,meq(skuber.ext.Ingress.ingListDef),any) returns Future.successful(new skuber.ext.IngressList("","",None,List(mock[skuber.ext.Ingress])))
+      // testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(Some(mock[skuber.ext.Ingress]))
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(

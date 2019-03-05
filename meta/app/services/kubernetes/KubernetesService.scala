@@ -1226,14 +1226,15 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       updatedResource <- cleanly(context.provider, namespace) { kube =>
         // fetching old kubernetes entities for this container
         val fGetServices = kube.listSelected[skuber.ServiceList](META_CONTAINER_KEY is s"${metaResource.id}").map(_.items)
-        val fGetIngressOpt = kube.getOption[skuber.ext.Ingress](specProperties.name)
+        // val fGetIngressOpt = kube.getOption[skuber.ext.Ingress](specProperties.name)
+        val fGetIngresses = kube.listSelected[skuber.ext.IngressList](META_CONTAINER_KEY is s"${metaResource.id}")
         val serviceTypeOptics = GenLens[skuber.Service](_.spec) composePrism some composeLens GenLens[skuber.Service.Spec](_._type)
         for(
           services <- fGetServices;
           oldClusterIpServiceOpt = services.find(serviceTypeOptics.getOption(_) == Some(skuber.Service.Type.ClusterIP));
           oldNodePortServiceOpt = services.find(serviceTypeOptics.getOption(_) == Some(skuber.Service.Type.NodePort));
           oldLoadBalancerServiceOpt = services.find(serviceTypeOptics.getOption(_) == Some(skuber.Service.Type.LoadBalancer));
-          oldIngressOpt <- fGetIngressOpt;
+          oldIngressOpt <- fGetIngresses.map(_.headOption);
 
           // setting cluster ip and resource version to new Service spec – otherwise kubernetes will disallow updating the service
           withClusterIp = { (o0: Option[skuber.Service], n0: Option[skuber.Service]) =>
