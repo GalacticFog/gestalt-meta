@@ -33,11 +33,13 @@ object KubernetesProviderProperties {
   }
 
   case class Config(
-    host_volume_whitelist: Seq[String] = Seq(),
-    storage_classes: Seq[String] = Seq(),
+    host_volume_whitelist: Seq[String] = Seq.empty,
+    storage_classes: Seq[String] = Seq.empty,
     cpu_requirement_type: Set[RequestLimit] = Set(Request),
     memory_requirement_type: Set[RequestLimit] = Set(Limit, Request),
-    affinity: Option[Pod.Affinity] = None
+    affinity: Option[Pod.Affinity] = None,
+    // https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/#clusters-containing-different-types-of-gpus
+    gpu_default_node_selector: Map[String,String] = Map.empty
     // formerly:
     // `cpu-requirement-type`: String = "request",
     // `memory-requirement-type`: String = "limit,request"

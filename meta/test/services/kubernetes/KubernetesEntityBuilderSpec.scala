@@ -1051,6 +1051,18 @@ class KubernetesEntityBuilderSpec extends PlaySpecification with ResourceScope w
     }
 
     "create pod template with gpu" in {
+      val testK8SProvider1 = newInstance(
+        typeId = ResourceIds.KubeProvider,
+        name = "test-provider",
+        properties = Option(Map(
+          "parent" -> "{}",
+          "config" -> Json.obj(
+            "host_volume_whitelist" -> Json.arr("/supported-path/sub-path"),
+            "storage_classes" -> Json.arr("storage-class-1"),
+            "gpu_default_node_selector" -> Json.obj("accelerator" -> "nvidia-tesla-k80") 
+          ).toString
+        ))
+      )
       val container = newInstance(
         ResourceIds.Container,
         "test-container",
@@ -1078,7 +1090,7 @@ class KubernetesEntityBuilderSpec extends PlaySpecification with ResourceScope w
           ).toString
         ))
       )
-      val res = mkPodTemplate(testK8SProvider, container)
+      val res = mkPodTemplate(testK8SProvider1, container)
       res === Right(
         skuber.Pod.Template.Spec(
           spec = Some(skuber.Pod.Spec(
@@ -1109,7 +1121,8 @@ class KubernetesEntityBuilderSpec extends PlaySpecification with ResourceScope w
               skuber.LocalObjectReference("imagepullsecret-3"),
               skuber.LocalObjectReference("imagepullsecret-4"),
               skuber.LocalObjectReference("imagepullsecret-5")
-            )
+            ),
+            nodeSelector = Map("accelerator" -> "nvidia-tesla-k80")
           ))
         )
       )
