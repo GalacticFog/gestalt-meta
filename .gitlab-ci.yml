@@ -1,8 +1,9 @@
-image: galacticfog/docker-sbt:1.12
+image: galacticfog/docker-sbt:18.09.1
 
 stages:
 - test
 - publish
+- mark-stable
 - deploy
 
 cache:
@@ -58,7 +59,17 @@ docker-publish:
   stage: publish
   services:
     - docker:dind
-  script: 
+  script:
+    - | 
+      echo "Login Docker Registry:"
+      echo ${DOCKER_PWD} | docker login ${DOCKER_REGISTRY} --username ${DOCKER_USER} --password-stdin
+    - |
+      echo "Determine current branch:"
+      if  [ "`git rev-parse tags/$CI_COMMIT_REF_NAME 2>/dev/null`" = "tags/$CI_COMMIT_REF_NAME" ]; then
+        BRANCH_NAME=$CI_COMMIT_REF_NAME;
+      else
+        BRANCH_NAME=$(git branch -a --contains $(git rev-parse tags/$CI_COMMIT_REF_NAME)|grep origin|awk -F/ '{print $3}');
+      fi;
     - VERSION=$(grep "^version" meta/build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
     - DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
     - cd meta/target/docker/stage
@@ -66,7 +77,7 @@ docker-publish:
     - docker build -t $DOCKER_IMG:$DOCKER_TAG .
     - docker push     $DOCKER_IMG:$DOCKER_TAG
     - |
-      if [ ${CI_COMMIT_REF_NAME} == "master" ]; then
+      if [ ${BRANCH_NAME} == "master" ]; then
          docker tag $DOCKER_IMG:$DOCKER_TAG $DOCKER_IMG:latest
          docker push $DOCKER_IMG:latest
       fi
@@ -88,8 +99,40 @@ github-publish:
     - tags
   artifacts:
 
+.deploy_template: &mark_stable_image
+  stage: mark-stable
+  script:
+    - |
+      echo "Lookup proper docker tag same way as docker image build does"
+      VERSION=$(grep "^version" meta/build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
+      DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
+    - |
+      echo "Clone and configure release management repository:"
+      git clone "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/galacticfog/release-management.git"
+      cd release-management
+      git remote set-url origin https://${CI_BOT_USER}:${CI_BOT_TOKEN}@gitlab.com/galacticfog/release-management.git
+      git config --global user.email "ci@galacticfog.com"
+      git config --global user.name "CI Job"
+    - |
+      echo "Update latest dev-stable version"
+      echo ${DOCKER_TAG} > ./versions/dev-stable/${DOCKER_IMG}
+      git add .
+      git commit -m "CI: Mark dev-stable: ${DOCKER_IMG}:${DOCKER_TAG}"
+      git push origin master
+
+auto-mark-image:
+  <<: *mark_stable_image
+  only: 
+    - master
+
+manual-mark-image:
+  <<: *mark_stable_image
+  except: 
+    - master
+  when: manual
+
 .deploy_template: &deploy_to_test
-  image: galacticfog/gitlab-updater
+  image: galacticfog/docker-sbt:18.09.1
   stage: deploy
   environment: test
   tags: 
@@ -97,7 +140,30 @@ github-publish:
   script: 
     - VERSION=$(grep "^version" meta/build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
     - DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
-    - http --check-status -a "$API_KEY":"$API_SECRET" --ignore-stdin $LEGACY_CI_URL project=$CI_PROJECT_NAME image=$DOCKER_IMG:$DOCKER_TAG git_ref=$CI_COMMIT_REF_NAME git_sha=$CI_COMMIT_SHA git_author="$GITLAB_USER_NAME"
+    # Deploy test (old)
+    # - http --check-status -a "$API_KEY":"$API_SECRET" --ignore-stdin $LEGACY_CI_URL project=$CI_PROJECT_NAME image=$DOCKER_IMG:$DOCKER_TAG git_ref=$CI_COMMIT_REF_NAME git_sha=$CI_COMMIT_SHA git_author="$GITLAB_USER_NAME"
+    - |
+      echo "Next: Login"
+      FOG_CONTEXT="ci-deploy"
+      fog use ${FOG_CONTEXT}
+      fog login --url ${GF_TEST_GESTALT_URI} --username ${GF_TEST_GESTALT_USER} --password ${GF_TEST_GESTALT_PWD}
+      GESTALT_TOKEN=$(cat ~/.fog/${FOG_CONTEXT}/auth.json.cached | jq -r '.access_token')
+    - |
+      echo "Look-up container for update and set new values"
+      ITEM_LOCATION="/root/gestalt-system-workspace/gestalt-system-environment"
+      ITEM_NAME="gestalt-meta"
+      ITEM_CATEGORY="containers"
+      container_id=$(fog show ${ITEM_CATEGORY} ${ITEM_LOCATION} --name ${ITEM_NAME} --fields id --no-headers | tr -d '[:space:]')
+      NEW_IMAGE="$DOCKER_IMG:$DOCKER_TAG"
+      NEW_DESCRIPTION="Last updated in CI: \n Time: `date` \n Author: $GITLAB_USER_NAME \n Git ref: $CI_COMMIT_REF_NAME \n SHA: $CI_COMMIT_SHA \n"
+    - |
+      echo "Update Image and Description"
+      echo '[{"op": "replace", "path": "/properties/image", "value": "'${NEW_IMAGE}'"},{"op": "replace", "path": "/description", "value": "'${NEW_DESCRIPTION[@]}'"}]' > patch.json
+      fog meta PATCH -f patch.json /root/containers/${container_id}
+    - |
+      echo "Announce in slack:"
+      SLACK_MESSAGE="${NEW_IMAGE}_ deployed to test by *${GITLAB_USER_NAME}*"
+      echo "{\"text\":\"${SLACK_MESSAGE}\"}" | http POST "${SLACK_BASE_URL}${SLACK_CICD_PATH}"
   artifacts:
 
 auto-deploy-master:
