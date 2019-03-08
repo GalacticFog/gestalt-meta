@@ -36,6 +36,7 @@ object KubeNativeMethods {
 class KubeNativeMethods @Inject()(skuberFactory: SkuberFactory) {
 
   import KubeNativeMethods._
+  import com.galacticfog.gestalt.data.HardDeleteInstanceManager
   
   private val log = Logger(this.getClass)
   
@@ -75,7 +76,7 @@ class KubeNativeMethods @Inject()(skuberFactory: SkuberFactory) {
     } yield d).getOrElse {
       throw new RuntimeException("Could not find Kube Deployment for Meta AppDeployment Resource.")
     }
-    
+
     /*
      *  Find the AppDeployment Kube Provider
      */
@@ -85,7 +86,7 @@ class KubeNativeMethods @Inject()(skuberFactory: SkuberFactory) {
       log.error(s"Kube provider with ID '${appDeployment.provider}' not found.")
       throw new RuntimeException(s"Kube provider with ID '${appDeployment.provider}' not found.")
     }
-
+    
     /*
      * TODO: There doesn't seem to be a need for the caller to specify a kube namespace.
      * The namespace should come from the AppDeployment - we can get rid of the 'namespace'
@@ -93,28 +94,44 @@ class KubeNativeMethods @Inject()(skuberFactory: SkuberFactory) {
      * 
      * val namespace = namespaceOrDefault(qs)
      */
+    
+    val deploymentStatus =
+      (kubeDeployment \ "status").asOpt[String].map(_.trim.toLowerCase).getOrElse("success")
+    
+    if (deploymentStatus == "failed") {
+      val deleter = new HardDeleteInstanceManager[AccountLike](external = Map.empty)
+      deleter.delete(r, auth, force = true) match {
+        case Success(_) => Success(Seq.empty[GestaltResourceInstance])
+        case Failure(ex) => { 
+          log.error("Failure deleting meta lambda resource during cleanup")
+          throw ex
+        }
+      }
+    } else {
 
-    val (namespace, deploymentName) = {
-      ((kubeDeployment \ "metadata" \ "namespace").as[String],
-       (kubeDeployment \ "metadata" \ "name").as[String])
+      val (namespace, deploymentName) = {
+        ((kubeDeployment \ "metadata" \ "namespace").as[String],
+         (kubeDeployment \ "metadata" \ "name").as[String])
+      }
+      val externalId = s"/namespaces/${namespace}/deployments/${deploymentName}"
+      
+      log.debug(s"[deployment-name]: ${deploymentName}, [namespace]: ${namespace}, [external-id]: ${externalId}")
+      
+      // Attempt to delete the Kube Deployment along with dependent resources.
+      val maybeKubeDelete = for {
+        context <- skuberFactory.initializeKube(kube, namespace)
+        r1 <- deleteDeployment(context, deploymentName, DeletePropagation.Foreground)
+        r2 <- ancillaryCleanup(context, appDeployment)
+      } yield r2
+      
+      val result = maybeKubeDelete.transform(
+        s => Try(findDeploymentContainer(externalId, r.id)),
+        e => throw e
+      )
+  
+      Await.result(result, 10.seconds)
     }
-    val externalId = s"/namespaces/${namespace}/deployments/${deploymentName}"
     
-    log.debug(s"[deployment-name]: ${deploymentName}, [namespace]: ${namespace}, [external-id]: ${externalId}")
-
-    // Attempt to delete the Kube Deployment along with dependent resources.
-    val maybeKubeDelete = for {
-      context <- skuberFactory.initializeKube(kube, namespace)
-      r1 <- deleteDeployment(context, deploymentName, DeletePropagation.Foreground)
-      r2 <- ancillaryCleanup(context, appDeployment)
-    } yield r2
-    
-    val result = maybeKubeDelete.transform(
-      s => Try(findDeploymentContainer(externalId, r.id)),
-      e => throw e
-    )
-
-    Await.result(result, 10.seconds)
   }
 
   
