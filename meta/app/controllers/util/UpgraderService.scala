@@ -237,11 +237,6 @@ case object UpgraderService {
             "provider" -> Json.obj(
               "id" -> launchPayload.caasProviderId
             )
-//            "volumes" -> Seq(Json.obj(
-//              "mount_path" -> "persistence",
-//              "volume_resource" ->
-//                com.galacticfog.gestalt.meta.api.VolumeSpec.toResourcePrototype(volumeSpec(launchPayload.caasProviderId))
-//            ))
           )
         ),
         "init" -> Json.obj(
