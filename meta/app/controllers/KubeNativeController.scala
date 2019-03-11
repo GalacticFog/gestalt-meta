@@ -364,7 +364,15 @@ class KubeNativeController @Inject()(
         ()
       }
 
+      def assertValidReleaseName(release: String): Try[Unit] = Try {
+        val releasePattern = """[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*"""
+        if (!release.matches(releasePattern)) {
+          throw new BadRequestException("Bad release-name : must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character")
+        }
+      }
+      
       for {
+        _ <- Future.fromTry(assertValidReleaseName(chart.release))
         _ <- Future.fromTry(Try(assertValidResourceKinds(chart.documents)))
         _ <- Future.fromTry(findSingleDeployment(chart.documents))
         
