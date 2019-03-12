@@ -381,7 +381,7 @@ trait KubernetesEntityBuilder {
       port <- pm.lb_port.orElse(pm.container_port)
     ) yield {
       skuber.ext.Ingress.Rule(vhost, skuber.ext.Ingress.HttpRule(
-        List(skuber.ext.Ingress.Path("", skuber.ext.Ingress.Backend(specProperties.name, port)))
+        List(skuber.ext.Ingress.Path("", skuber.ext.Ingress.Backend(s"${specProperties.name}-ext", port)))
       ))
     }
 
