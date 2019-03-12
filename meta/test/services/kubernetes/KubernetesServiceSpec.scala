@@ -2020,9 +2020,9 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         )
           and
         ((_:Ingress).spec.map(_.rules).getOrElse(Nil)) ^^ containTheSameElementsAs(Seq(
-          Rule("www.galacticfog.com",    HttpRule(List(Path("", Backend(createdService.name, 80))))),
-          Rule("galacticfog.com",        HttpRule(List(Path("", Backend(createdService.name, 80))))),
-          Rule("secure.galacticfog.com", HttpRule(List(Path("", Backend(createdService.name, 8443)))))
+          Rule("www.galacticfog.com",    HttpRule(List(Path("", Backend(s"${createdService.name}-ext", 80))))),
+          Rule("galacticfog.com",        HttpRule(List(Path("", Backend(s"${createdService.name}-ext", 80))))),
+          Rule("secure.galacticfog.com", HttpRule(List(Path("", Backend(s"${createdService.name}-ext", 8443)))))
         ))
       ))(any,meq(Ingress.ingDef),any)
       there were two(testSetup.client).close
@@ -3488,7 +3488,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         inNamespace(testSetup.testNS.name)
           and haveName(metaContainer.name)
           and (((_: skuber.ext.Ingress).spec.get.rules.map(_.host)) ^^ containTheSameElementsAs(Seq("port81.test.com","port8444.test.com")))
-          and (((_: skuber.ext.Ingress).spec.get.rules.flatMap(_.http.paths).map(_.backend.serviceName).distinct) ^^ containTheSameElementsAs(Seq(metaContainer.name)))
+          and (((_: skuber.ext.Ingress).spec.get.rules.flatMap(_.http.paths).map(_.backend.serviceName).distinct) ^^ containTheSameElementsAs(Seq(s"${metaContainer.name}-ext")))
       ))(any,meq(Ingress.ingDef),any)
       there was one(testSetup.client).update(argThat(
         inNamespace(testSetup.testNS.name)
