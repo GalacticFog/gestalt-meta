@@ -125,8 +125,8 @@ trait KubernetesEntityBuilder {
             import controllers.util.JsonInput
             val ji = new JsonInput {}
 
-            val resource = ji.inputToInstance(UUID.fromString("00000000-0000-0000-0000-000000000000"), in.volume_resource)
             for(
+              resource <- eitherFromTry(Try(ji.inputToInstance(UUID.fromString("00000000-0000-0000-0000-000000000000"), in.volume_resource)));
               volumeProperties <- ResourceSerde.deserialize[VolumeSpec,Error.UnprocessableEntity](resource);
               label = s"volume-in-${volumeProperties.name}";    // format of this label is important
               vm <- volumeProperties.`type` match {

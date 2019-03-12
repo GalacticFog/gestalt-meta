@@ -7,7 +7,6 @@ import akka.actor.ActorRef
 import akka.pattern.ask
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.{HardDeleteInstanceManager, ResourceFactory}
-import com.galacticfog.gestalt.meta.api
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, Resource, VolumeSpec}
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -40,23 +39,22 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
 
   lazy val rootId = Resource.findFqon("root").map(_.id).getOrElse(throw new RuntimeException("could not find root org"))
 
-  private[this] def wrapUnauthedHandler(f: (GestaltResourceInstance) => Try[Unit])(r: GestaltResourceInstance, a: AccountLike) = f(r)
+  private[this] def wrapUnauthedHandler(f: GestaltResourceInstance => Try[Unit])(r: GestaltResourceInstance, a: AccountLike) = f(r)
   private val deleteMgr = new HardDeleteInstanceManager[AccountLike](
     external = Map(
       ResourceIds.Container   -> wrapUnauthedHandler { resourceLike =>
        Try(Await.result(ContainerService.deleteContainerHandler(providerManager, resourceLike), 10 .seconds)) recoverWith {
-          case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
-          case throwable => {
+          case _: scala.concurrent.TimeoutException => Failure(InternalErrorException("timed out waiting for external CaaS service to respond"))
+          case throwable =>
             throwable.printStackTrace()
             Failure(throwable)
-          }
         }
       },
       ResourceIds.Api         -> wrapUnauthedHandler { resourceLike =>
-        Try(Await.result(gatewayMethods.deleteApiHandler(resourceLike), 5 .seconds))
+        Try(Await.result(gatewayMethods.deleteApiHandler(resourceLike), 5.seconds))
       },
       ResourceIds.ApiEndpoint -> wrapUnauthedHandler { resourceLike =>
-        Try(Await.result(gatewayMethods.deleteEndpointHandler(resourceLike), 5 .seconds))
+        Try(Await.result(gatewayMethods.deleteEndpointHandler(resourceLike), 5.seconds))
       }
     )
   )
@@ -65,7 +63,7 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
                              (implicit ec: ExecutionContext): Future[UpgradeStatus] = {
     for {
       maybeProviderId <- (configActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]
-      _ = log.info(s"upgrade_provider: ${maybeProviderId}")
+      _ = log.info(s"upgrade_provider: $maybeProviderId")
       maybeProvider = maybeProviderId
         .flatMap(s => Try(UUID.fromString(s)).toOption)
         .flatMap(ResourceFactory.findById(ResourceIds.Provider, _))
@@ -76,7 +74,7 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
         case Some(provider) =>
           log.info("upgrade_provider exists; will delete")
           Future.fromTry(
-            deleteMgr.delete(provider, creator, true)
+            deleteMgr.delete(provider, creator, force = true)
               .map(_ => ())
           )
       }
@@ -228,7 +226,7 @@ case object UpgraderService {
             "env" -> Json.obj(
               "META_CALLBACK_URL" -> System.getenv().getOrDefault("META_POLICY_CALLBACK_URL", metaUrl)
             ),
-            "network" -> "BRIDGE",
+            "network" -> "default",
             "num_instances" -> 1,
             "port_mappings" -> Seq(Json.obj(
               "container_port" -> 9000,
@@ -238,11 +236,7 @@ case object UpgraderService {
             )),
             "provider" -> Json.obj(
               "id" -> launchPayload.caasProviderId
-            ),
-            "volumes" -> Seq(Json.obj(
-              "mount_path" -> "persistence",
-              "volume_resource" -> api.VolumeSpec.toResourcePrototype(volumeSpec(launchPayload.caasProviderId))
-            ))
+            )
           )
         ),
         "init" -> Json.obj(
@@ -263,7 +257,7 @@ case object UpgraderService {
 
   case class UpgradeStatus(active: Boolean, endpoint: Option[String])
   case object UpgradeStatus {
-    def inactive = UpgradeStatus(false,None)
+    def inactive = UpgradeStatus(active = false, endpoint = None)
   }
 
   implicit val usFmt: Format[UpgradeStatus] = Json.format[UpgradeStatus]
