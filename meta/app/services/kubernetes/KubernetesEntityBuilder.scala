@@ -380,8 +380,13 @@ trait KubernetesEntityBuilder {
       vhost <- pm.virtual_hosts.getOrElse(Seq.empty);
       port <- pm.lb_port.orElse(pm.container_port)
     ) yield {
+      val postfix = if(pm.lb_ip.isDefined) {
+        "lb"
+      }else {
+        "ext"
+      }
       skuber.ext.Ingress.Rule(vhost, skuber.ext.Ingress.HttpRule(
-        List(skuber.ext.Ingress.Path("", skuber.ext.Ingress.Backend(s"${specProperties.name}-ext", port)))
+        List(skuber.ext.Ingress.Path("", skuber.ext.Ingress.Backend(s"${specProperties.name}-${postfix}", port)))
       ))
     }
 
