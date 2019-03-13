@@ -307,11 +307,11 @@ class ContainerController @Inject()(
           "description" -> resource.description.getOrElse("")
         )));    // why not pass this explicitly from ui? I'd prefer verbosity over inconsistence
         jobProperties <- ResourceSerde.deserialize[ContainerSpec](modifiedResource);
-        _ <- if(jobProperties.port_mappings.isEmpty) {
-          Right(())
-        }else {
-          Left(Error.BadRequest("port_mappings are not supported on Job resources"))
-        };
+        // _ <- if(jobProperties.port_mappings.isEmpty) {
+        //   Right(())
+        // }else {
+        //   Left(Error.BadRequest("port_mappings are not supported on Job resources"))
+        // };
         provider <- Either.fromOption(ResourceFactory.findById(jobProperties.provider.id),
          Error.NotFound(s"CaasProvider with ID '${jobProperties.provider.id}' not found"));
         _ <- assertCompatibleEnvType(provider, env)
