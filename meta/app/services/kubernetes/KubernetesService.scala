@@ -1280,6 +1280,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   def createJob(context: ProviderContext, metaResource: Instance) (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     import KubernetesProviderProperties.Implicits._
     import monocle.std.option._
+    import cats.instances.option._
 
     val podTemplateRestartPolicy = GenLens[skuber.Pod.Template.Spec](_.spec) composePrism some composeLens
      GenLens[skuber.Pod.Spec](_.restartPolicy)
@@ -1315,26 +1316,58 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       )
     }
 
-    val jobNamespaceOptics = GenLens[skuber.batch.Job](_.metadata.namespace)
-
     for(
+      specProperties0 <- ResourceSerde.deserialize[ContainerSpec,Error.UnprocessableEntity](metaResource).liftTo[Future];
+      specProperties = specProperties0.copy(name=metaResource.name);    // this should be done somewhere else
+      skuberSpecs <- buildDeploymentSpecs(context, metaResource, specProperties).liftTo[Future];
+      (_, clusterIpServiceSpecOpt, nodePortServiceSpecOpt, loadBalancerServiceSpecOpt, ingressSpecOpt) = skuberSpecs;
       jobSpec <- eitherJobSpec.liftTo[Future];
       namespace <- cleanly(context.provider, DefaultNamespace) { kube =>
         getNamespace(kube, context, create = true)
       };
-      job <- cleanly(context.provider, namespace.name) { kube =>
-        kube.create[skuber.batch.Job](jobNamespaceOptics.set(namespace.name)(jobSpec)) recoverWith { case e: K8SException =>
+      // filling in namespace
+      setServiceNamespace = GenLens[skuber.Service](_.metadata.namespace).set(namespace.name);
+      setJobNamespace = GenLens[skuber.batch.Job](_.metadata.namespace).set(namespace.name);
+      setIngressNamespace = GenLens[skuber.ext.Ingress](_.metadata.namespace).set(namespace.name);
+      updatedResource <- cleanly(context.provider, namespace.name) { kube =>
+        val fJob = kube.create[skuber.batch.Job](setJobNamespace(jobSpec)) recoverWith { case e: K8SException =>
           e.printStackTrace()
           Future.failed(new RuntimeException(s"Failed creating Job '${metaResource.name}': ${e.status.message}"))
         }
+        val createService = { service: skuber.Service =>
+          kube.create[skuber.Service](setServiceNamespace(service)) recoverWith { case e: K8SException =>
+            e.printStackTrace()
+            Future.failed(new RuntimeException(s"Failed creating Kubernetes Service ${service.name} for container '${metaResource.name}': ${e.status.message}"))
+          }
+        }
+        val fClusterIpServiceOpt = clusterIpServiceSpecOpt.map(createService(_)).sequence
+        val fNodePortServiceOpt = nodePortServiceSpecOpt.map(createService(_)).sequence
+        val fLoadBalancerServiceOpt = loadBalancerServiceSpecOpt.map(createService(_)).sequence
+        val fIngressOpt = (ingressSpecOpt map { ingress =>
+          kube.create[skuber.ext.Ingress](setIngressNamespace(ingress)) recoverWith { case e: K8SException =>
+            e.printStackTrace()
+            Future.failed(new RuntimeException(s"Failed creating Kubernetes Ingress for container '${metaResource.name}': ${e.status.message}"))
+          }
+        }).sequence
+        for(
+          job <- fJob;
+          clusterIpServiceOpt <- fClusterIpServiceOpt;
+          nodePortServiceOpt <- fNodePortServiceOpt;
+          loadBalancerServiceOpt <- fLoadBalancerServiceOpt;
+          _ <- fIngressOpt
+        ) yield {
+          val updatedPortMappings: Seq[ContainerSpec.PortMapping] = specProperties.port_mappings map { pm =>
+            updatePortMapping(pm, clusterIpServiceOpt, nodePortServiceOpt, loadBalancerServiceOpt)
+          }
+          val extraProps = Map(
+            "external_id" -> s"/namespaces/${job.ns}/jobs/${job.name}",
+            "status" -> "LAUNCHED",
+            "port_mappings" -> Json.stringify(Json.toJson(updatedPortMappings))
+          )
+          metaResource.copy(properties = Some((metaResource.properties getOrElse Map()) ++ extraProps))
+        }
       }
-    ) yield {
-      val extraProps = Map(
-        "external_id" -> s"/namespaces/${job.ns}/jobs/${job.name}",
-        "status" -> "LAUNCHED"
-      )
-      metaResource.copy(properties = Some((metaResource.properties getOrElse Map()) ++ extraProps))
-    }
+    ) yield updatedResource
   }
   
   def destroyJob(job: GestaltResourceInstance): Future[Unit] = {
