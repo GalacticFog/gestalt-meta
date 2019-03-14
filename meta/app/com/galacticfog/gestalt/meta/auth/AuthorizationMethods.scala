@@ -40,7 +40,9 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   def grant(caller: UUID, identity: UUID, resource: UUID, actions: String*): Seq[Try[GestaltResourceInstance]] = {
     
     ResourceFactory.findById(resource).fold {
-      throw new ResourceNotFoundException(s"Resource with ID '$resource' not found")
+      val result: Seq[Try[GestaltResourceInstance]] =
+      Seq(Failure(new ResourceNotFoundException(s"Resource with ID '$resource' not found")))
+      result
     }{ res =>
       
       val acts = actions // These will be normalized later.
