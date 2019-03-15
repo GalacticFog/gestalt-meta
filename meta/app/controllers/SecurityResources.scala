@@ -207,9 +207,15 @@ class SecuritySync @Inject()(
     // Allow users to view their home-org
     grant(caller, user, homeOrg, "org.view")
     
-    // Allow users to view themselves
-    grant(caller, user, user, "user.view")
-  }  
+    // Allow users to view and edit themselves - full permissions to their own userprofiles.
+    grant(caller, user, user, 
+        "user.view", 
+        "user.update",
+        "userprofile.create", 
+        "userprofile.view", 
+        "userprofile.update", 
+        "userprofile.delete")
+  }
   
   def updateUsers(creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
     val rootOrg = security.getRootOrg(account).get

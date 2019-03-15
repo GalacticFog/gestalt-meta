@@ -11,6 +11,7 @@ import com.galacticfog.gestalt.data.bootstrap.SystemType
 import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import controllers.util.GestaltSecurityMocking
 import java.util.UUID
@@ -326,6 +327,83 @@ class AuthorizationMethodsSpec extends GestaltSecurityMocking with ResourceScope
 
       (a.sorted == b.sorted) must beTrue   
     }
+  }
+
+  "grant" should {
+    
+    import play.api.libs.json._
+    import com.galacticfog.gestalt.data.models._
+    
+    def getEntitlementIds(ent: GestaltResourceInstance): Seq[UUID] = {
+      val ids = for {
+        ps <- ent.properties
+        ids = Json.parse(ps("identities")).validate[Seq[String]].get
+      } yield {
+        ids.map(UUID.fromString(_))
+      }
+      ids.getOrElse(Seq.empty[UUID])
+    }
+    
+    "create a single Entitlement for the given action on the given resource (user in entitlement)" >> {
+      val userId = uuid()
+      val user = createNewUser(id = userId)
+      
+      ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, userId).size === 0
+      
+      Auth.grant(userId, userId, userId, "user.view")
+      
+      val ents = ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, userId)
+      ents.size === 1
+      
+      val ids = getEntitlementIds(ents.head)
+      ids.contains(userId) === true
+    }
+    
+    "create multiple Entitlements for given actions on given resource (user set in all entitlements)" >> {
+      val userId = uuid()
+      val user = createNewUser(id = userId)
+      
+      ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, userId).size === 0
+      
+      Auth.grant(userId, userId, userId, "user.view", "user.update", "userprofile.view", "userprofile.update")
+      
+      val ents = ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, userId)
+      ents.size === 4
+      
+      val ids: Seq[UUID] = ents.flatMap { en => getEntitlementIds(en) }
+      ids.size === 4
+      ids.contains(userId) === true
+      ids.exists(_ != userId) === false
+    }
+    
+    "fail if the given resource does not exist" >> {
+      val userId = uuid()
+      val user = createNewUser(id = userId)
+      val (_, env) = createWorkspaceEnvironment()
+      
+      ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, env).size === 0
+      
+      val results = Auth.grant(userId, userId, uuid(), "environment.update")
+      
+      results.size === 1
+      results.head must beFailedTry.withThrowable[ResourceNotFoundException]
+    }
+    
+    /*
+     * TODO: Not sure if i want to enforce this for debug reasons.
+     */
+//    "fail if the given identity does not exist" >> {
+//      val userId = uuid()
+//      val user = createNewUser(id = userId)
+//      val (_, env) = createWorkspaceEnvironment()
+//      
+//      ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, env).size === 0
+//      
+//      val results = Auth.grant(userId, uuid(), env, "environment.update")
+//      
+//      results.size === 1
+//      results.head must beFailedTry
+//    }    
   }
   
 //  "All Entitlements" should {
