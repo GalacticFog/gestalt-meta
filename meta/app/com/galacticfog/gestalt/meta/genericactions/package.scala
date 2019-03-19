@@ -1,9 +1,10 @@
 package com.galacticfog.gestalt.meta
 
+import java.util.UUID
 import play.api.libs.json._
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-
+import scala.util.Try
 
 package object genericactions {
   
@@ -20,6 +21,7 @@ package object genericactions {
   implicit lazy val formatDeleteVerb = Json.format[DeleteVerb]
 
   implicit lazy val formatGestaltFunction = Json.format[GestaltFunction]
+  implicit lazy val formatGestaltEndpointImpl = Json.format[GestaltEndpointImpl]
   implicit lazy val formatGestaltEndpoint = Json.format[GestaltEndpoint]
   lazy implicit val formatGestaltFunctionConfig = Json.format[GestaltFunctionConfig]    
   
@@ -27,23 +29,15 @@ package object genericactions {
   /**
    * Extract a GestaltFunctionConfig object from a Provider instance.
    */
-  def getFunctionConfig(provider: GestaltResourceInstance): Option[GestaltFunctionConfig] = {
-    try {
-      for {
-        ps  <- provider.properties
-        cfg <- ps.get("config")
-        out = {
-          val configJson = Json.parse(cfg).as[JsObject]
-          (Js.parse[GestaltFunctionConfig](configJson)(formatGestaltFunctionConfig)).get
-        }
-      } yield out
-    } catch {
-      case e: Throwable => {
-        // ignore failures for now.
-        //Option.empty[GestaltResourceInstance]
-        None
+  def getFunctionConfig(provider: GestaltResourceInstance): Try[GestaltFunctionConfig] = {
+    for {
+      ps  <- Try(provider.properties.getOrElse(throw new RuntimeException("No properties found.")))
+      cfg <- Try(ps.get("config").getOrElse(throw new RuntimeException("No 'config' property found.")))
+      out = {
+        val configJson = Json.parse(cfg).as[JsObject]
+        (Js.parse[GestaltFunctionConfig](configJson)(formatGestaltFunctionConfig)).get
       }
-    }
+    } yield out
   }
   
   case class RequestQueryParameter(
@@ -148,8 +142,13 @@ package object genericactions {
       case e: DeleteVerb => "DELETE"
     }
   }
-  
-  case class GestaltEndpoint(kind: String, url: String, actions: Seq[GestaltFunction], authentication: Option[String] = None) {
+  case class GestaltEndpointImpl(kind: String, id: UUID)
+  case class GestaltEndpoint(
+                              kind: String, 
+                              url: String, 
+                              implementation: Option[GestaltEndpointImpl] = None,
+                              actions: Seq[GestaltFunction], 
+                              authentication: Option[String] = None) {
     if (actions.isEmpty) throw new RuntimeException("Must specify at least one action for an Endpoint.")
     
     private val duplicateActions = actions.map(_.name).groupBy(identity).collect { 
@@ -169,7 +168,20 @@ package object genericactions {
       actions.find(_.name == name)
     }
   }
-  case class GestaltFunctionConfig(endpoints: Seq[GestaltEndpoint])
+  
+  case class GestaltFunctionConfig(endpoints: Seq[GestaltEndpoint]) {
+    
+    def getImplementationByActionName(action: String): Option[GestaltEndpointImpl] = {
+      for {
+        endpoint <- endpoints.find { _.actions.find(_.name == action).isDefined }
+        implementation <- endpoint.implementation
+      } yield implementation      
+    }
+    
+    def getEndpointByActionName(action: String): Option[GestaltEndpoint] = {
+      endpoints.find { _.actions.find(_.name == action).isDefined }      
+    }
+  }
 
   
 }

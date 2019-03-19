@@ -179,8 +179,8 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         
         val ownerLink = ResourceOwnerLink(ResourceIds.Org, rootid)
         
-//        log.debug(s"Setting Entitlement on $resource : ${ent.name}")
-//        log.debug(s"Entitlement Owner : " + ownerLink.id)
+        log.debug(s"Setting Entitlement on $resource : ${ent.name}")
+        log.debug(s"Entitlement Owner : ${ownerLink.id} - ${ownerLink.name}")
         
         val payload = {
           Js.transform(Json.toJson(ent).as[JsObject],

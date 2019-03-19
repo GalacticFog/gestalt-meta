@@ -563,26 +563,55 @@ class ResourceController @Inject()(
     }
 
     ResourceFactory.findProvidersWithEndpoints(target).flatMap { p =>
-      getFunctionConfig(p).fold(Seq.empty[JsObject]) { config =>
-        config.endpoints.flatMap { ep =>
-          val act = ep.getUiActions()
-          act.collect { case ac if ac.hasUi && inFilter(ac, prefixFilter) =>
-            val uiResponse = ac.post.get.getUiResponse.get
-
-            //
-            // This finds any query params where .value isDefined
-            //
-            val params = ac.post.fold(Seq.empty[RequestQueryParameter]){ ps =>
-              ps.query_parameters.getOrElse(Seq.empty[RequestQueryParameter]).
-                    filter(_.value.isDefined)
+      
+      getFunctionConfig(p) match {
+        case Failure(e) => {
+          log.warn(s"Failed parsing resource to FunctionConfig: ${e.getMessage}")
+          Seq.empty[JsObject]
+        }
+        case Success(config) => {
+          config.endpoints.flatMap { ep =>
+            val act = ep.getUiActions()
+            act.collect { case ac if ac.hasUi && inFilter(ac, prefixFilter) =>
+              val uiResponse = ac.post.get.getUiResponse.get
+  
+              //
+              // This finds any query params where .value isDefined
+              //
+              val params = ac.post.fold(Seq.empty[RequestQueryParameter]){ ps =>
+                ps.query_parameters.getOrElse(Seq.empty[RequestQueryParameter]).
+                      filter(_.value.isDefined)
+              }
+  
+              // Now we translate those query params to the JSON output format.
+              val y = reWriteParams2(params)
+              toOutputJson(p, ep, ac, uiResponse, y)
             }
-
-            // Now we translate those query params to the JSON output format.
-            val y = reWriteParams2(params)
-            toOutputJson(p, ep, ac, uiResponse, y)
-          }
+          }          
         }
       }
+      
+//      getFunctionConfig(p).fold(Seq.empty[JsObject]) { config =>
+//        config.endpoints.flatMap { ep =>
+//          val act = ep.getUiActions()
+//          act.collect { case ac if ac.hasUi && inFilter(ac, prefixFilter) =>
+//            val uiResponse = ac.post.get.getUiResponse.get
+//
+//            //
+//            // This finds any query params where .value isDefined
+//            //
+//            val params = ac.post.fold(Seq.empty[RequestQueryParameter]){ ps =>
+//              ps.query_parameters.getOrElse(Seq.empty[RequestQueryParameter]).
+//                    filter(_.value.isDefined)
+//            }
+//
+//            // Now we translate those query params to the JSON output format.
+//            val y = reWriteParams2(params)
+//            toOutputJson(p, ep, ac, uiResponse, y)
+//          }
+//        }
+//      }
+      
     }
   }
   
