@@ -1,12 +1,8 @@
 package controllers.util
 
-import java.util.UUID
-
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
 import com.galacticfog.gestalt.meta.genericactions._
 import com.galacticfog.gestalt.meta.test.{DbShutdown, ResourceScope}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
@@ -14,20 +10,29 @@ import controllers.SecurityResources
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification._
-import play.api.http.HeaderNames
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.libs.json.Reads._
-import play.api.libs.json.{JsObject, JsValue, Json, _}
+import play.api.libs.json._
 import play.api.libs.ws.WSClient
-import play.api.mvc.Action
-import play.api.mvc.BodyParsers.parse
-import play.api.mvc.Results.{Ok, Status, Unauthorized}
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits, PlaySpecification}
-import mockws.{MockWS, Route}
-
 import scala.util.Success
+
+
+/*
+ * These are the imports for the 'HttpGenericProvider' tests.
+ */
+//import java.util.UUID
+//import play.api.http.HeaderNames
+//import play.api.libs.json.Reads._
+//import play.api.libs.json.{JsObject, JsValue, Json, _}
+//import play.api.mvc.Action
+//import play.api.mvc.BodyParsers.parse
+//import play.api.mvc.Results.{Ok, Status, Unauthorized}
+//import mockws.{MockWS, Route}
+//import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+//import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
+
 
 class GenericResourceMethodsSpec extends PlaySpecification
   with GestaltSecurityMocking with ResourceScope
@@ -267,303 +272,302 @@ class GenericResourceMethodsSpec extends PlaySpecification
   }
 
 
-  "HttpGenericProvider" in {
-
-    "post appropriately to endpoints and parse Resource update semantics" in new TestScope {
-      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
-      val actionPayload = Json.obj(
-        "foo" -> "bar"
-      )
-
-      var postBody: JsValue = null
-      val routeInvoke = Route {
-        case (POST, testUrl) => Action(parse.json) { request =>
-          postBody = request.body
-          val resource = (request.body \ "resource").as[JsObject]
-          val updated = resource.transform(
-            (__ \ 'properties).json.update(
-              __.read[JsObject].map(o => o ++  Json.obj("foo" -> "new-bar"))
-            )
-          ).get
-          Ok(updated)
-        }
-      }
-      val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
-
-      val inv = GenericActionInvocation(
-        action = "noun.verb",
-        metaAddress = "http://example.com",
-        context = GenericActionContext(
-          org = rootOrg,
-          workspace = None,
-          environment = None
-        ),
-        provider = providerWithDefaultEndpoint,
-        resource = Some(dummyResource),
-        actionPayload = Some(actionPayload)
-      )
-
-      val response = await(httpProvider.invokeAction(inv))
-
-      routeInvoke.timeCalled must_== 1
-      (postBody \ "provider" \ "properties" \ "config" \ "providerSpecificConfig").asOpt[JsObject] must beSome(Json.obj(
-        "password" -> "monkey",
-        "url" -> "whatever"
-      ))
-      (postBody \ "action").asOpt[String] must beSome("noun.verb")
-      (postBody \ "actionPayload").asOpt[JsObject] must beSome(actionPayload)
-      (postBody \ "context" \ "org" \ "name").asOpt[String] must beSome("root")
-      (postBody \ "resource" \ "id").asOpt[UUID] must beSome(dummyResource.id)
-
-      response must beLeft[GestaltResourceInstance](
-        ((_: GestaltResourceInstance).properties.get) ^^ havePairs(
-          "foo" -> "new-bar"
-        )
-      )
-    }
-
-    "use authentication header if configured" in new TestScope {
-      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
-
-      val testHeader = "Bearer some-magic-token"
-      val routeInvoke = Route {
-        case (POST, testUrl) => Action(parse.json) { request =>
-          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
-            val resource = (request.body \ "resource").as[JsObject]
-            Ok(resource)
-          }
-          else Unauthorized("")
-        }
-      }
-      val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST", authHeader = Some(testHeader))
-
-      val inv = GenericActionInvocation(
-        action = "noun.verb",
-        metaAddress = "http://example.com",
-        context = GenericActionContext(
-          org = rootOrg,
-          workspace = None,
-          environment = None
-        ),
-        provider = providerWithDefaultEndpoint,
-        resource = Some(dummyResource)
-      )
-
-      await(httpProvider.invokeAction(inv)) must beLeft[GestaltResourceInstance]
-    }
-
-    "abide by provider 'method'" in new TestScope {
-      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
-
-      val testHeader = "Bearer some-magic-token"
-      val routeInvoke = Route {
-        case (GET, testUrl) => Action { request =>
-          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
-            Ok("got")
-          }
-          else Unauthorized("")
-        }
-      }
-      val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl, "GET", authHeader = Some(testHeader))
-
-      val inv = GenericActionInvocation(
-        action = "noun.verb",
-        metaAddress = "http://example.com",
-        context = GenericActionContext(
-          org = rootOrg,
-          workspace = None,
-          environment = None
-        ),
-        provider = providerWithDefaultEndpoint,
-        resource = Some(dummyResource)
-      )
-
-      await(httpProvider.invokeAction(inv)) must beRight(RawInvocationResponse(
-        Some(200), Some("text/plain; charset=utf-8"), Some("got")
-      ))
-    }
-
-    "expand url template" in new TestScope {
-      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
-
-      val templateUrl = "http://<provider.properties.config.env.public.SERVICE_HOST>:<provider.properties.config.env.public.SERVICE_PORT>/streams/<resource.id>/status"
-
-      val testHeader = "Bearer some-magic-token"
-      val routeInvoke = Route {
-        case (GET, url) if url == s"http://some-laser.some-domain:9000/streams/${dummyResource.id}/status" => Action { request =>
-          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
-            Ok("got")
-          }
-          else Unauthorized("")
-        }
-      }
-      val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, templateUrl, "GET", authHeader = Some(testHeader))
-
-      val inv = GenericActionInvocation(
-        action = "noun.verb",
-        metaAddress = "http://example.com",
-        context = GenericActionContext(
-          org = rootOrg,
-          workspace = None,
-          environment = None
-        ),
-        provider = providerWithDefaultEndpoint,
-        resource = Some(dummyResource)
-      )
-
-      await(httpProvider.invokeAction(inv)) must beRight(RawInvocationResponse(
-        Some(200), Some("text/plain; charset=utf-8"), Some("got")
-      ))
-    }
-
-    "expand url template (query params)" in new TestScope {
-      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
-
-      val templateUrl = "http://host/resources/<queryParams.p1>"
-
-      val testHeader = "Bearer some-magic-token"
-      val routeInvoke = Route {
-        case (GET, url) if url == s"http://host/resources/v1" => Action { request =>
-          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
-            Ok("got")
-          }
-          else Unauthorized("")
-        }
-      }
-      val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, templateUrl, "GET", authHeader = Some(testHeader))
-
-      val inv = GenericActionInvocation(
-        action = "noun.verb",
-        metaAddress = "http://example.com",
-        context = GenericActionContext(
-          org = rootOrg,
-          workspace = None,
-          environment = None
-        ),
-        provider = providerWithDefaultEndpoint,
-        resource = Some(dummyResource),
-        queryParams = Map(
-          "p1" -> Seq("v1","v1.2"),
-          "p2" -> Seq("v2")
-        )
-      )
-
-      await(httpProvider.invokeAction(inv)) must beRight(RawInvocationResponse(
-        Some(200), Some("text/plain; charset=utf-8"), Some("got")
-      ))
-    }
-
-    "40x errors from endpoints should result in BadRequestException" in new TestScope {
-      var status: Int = 398
-      val routeInvoke = Route {
-        case _ => Action(parse.json) { request =>
-          status = status + 1
-          new Status(status)
-        }
-      }
-      val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
-
-      val inv = GenericActionInvocation(
-        action = "noun.verb",
-        metaAddress = "http://example.com",
-        context = GenericActionContext(
-          org = rootOrg,
-          workspace = None,
-          environment = None
-        ),
-        provider = providerWithDefaultEndpoint
-      )
-
-      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("399")
-      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("400")
-      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("401")
-      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("402")
-      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("403")
-    }
-
-    "parse custom-response semantics from endpoints " in new TestScope {
-      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
-      val actionPayload = Json.obj(
-        "foo" -> "bar"
-      )
-
-      var postBody: JsValue = null
-      val customResponse = Json.obj(
-        "custom" -> "response"
-      )
-      val routeInvoke = Route {
-        case (POST, testUrl) => Action(parse.json) { request =>
-          postBody = request.body
-          Ok(customResponse)
-        }
-      }
-      val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
-
-      val inv = GenericActionInvocation(
-        action = "noun.verb",
-        metaAddress = "http://example.com",
-        context = GenericActionContext(
-          org = rootOrg,
-          workspace = None,
-          environment = None
-        ),
-        provider = providerWithDefaultEndpoint,
-        resource = Some(dummyResource),
-        actionPayload = Some(actionPayload)
-      )
-
-      val response = await(httpProvider.invokeAction(inv))
-
-      routeInvoke.timeCalled must_== 1
-
-      response must beRight(RawInvocationResponse(
-        Some(200), Some("application/json"), Some(customResponse.toString)
-      ))
-    }
-
-    "parse failure semantics" in new TestScope {
-      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
-      val failureMessage = "some failure message"
-      val customResponse = Json.obj(
-        "actionFailed" -> failureMessage
-      )
-      val routeInvoke = Route {
-        case (POST, testUrl) => Action(parse.json) { response => Ok(customResponse) }
-      }
-      val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
-
-      val inv = GenericActionInvocation(
-        action = "noun.verb",
-        metaAddress = "http://example.com",
-        context = GenericActionContext(
-          org = rootOrg,
-          workspace = None,
-          environment = None
-        ),
-        provider = providerWithDefaultEndpoint,
-        resource = Some(dummyResource),
-        actionPayload = Some(Json.obj(
-          "foo" -> "bar"
-        ))
-      )
-
-      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException](failureMessage)
-    }
-
-  }
+//  "HttpGenericProvider" in {
+//
+//    "post appropriately to endpoints and parse Resource update semantics" in new TestScope {
+//      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+//      val actionPayload = Json.obj(
+//        "foo" -> "bar"
+//      )
+//
+//      var postBody: JsValue = null
+//      val routeInvoke = Route {
+//        case (POST, testUrl) => Action(parse.json) { request =>
+//          postBody = request.body
+//          val resource = (request.body \ "resource").as[JsObject]
+//          val updated = resource.transform(
+//            (__ \ 'properties).json.update(
+//              __.read[JsObject].map(o => o ++  Json.obj("foo" -> "new-bar"))
+//            )
+//          ).get
+//          Ok(updated)
+//        }
+//      }
+//      val ws = MockWS(routeInvoke)
+//      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
+//
+//      val inv = GenericActionInvocation(
+//        action = "noun.verb",
+//        metaAddress = "http://example.com",
+//        context = GenericActionContext(
+//          org = rootOrg,
+//          workspace = None,
+//          environment = None
+//        ),
+//        provider = providerWithDefaultEndpoint,
+//        resource = Some(dummyResource),
+//        actionPayload = Some(actionPayload)
+//      )
+//
+//      val response = await(httpProvider.invokeAction(inv))
+//
+//      routeInvoke.timeCalled must_== 1
+//      (postBody \ "provider" \ "properties" \ "config" \ "providerSpecificConfig").asOpt[JsObject] must beSome(Json.obj(
+//        "password" -> "monkey",
+//        "url" -> "whatever"
+//      ))
+//      (postBody \ "action").asOpt[String] must beSome("noun.verb")
+//      (postBody \ "actionPayload").asOpt[JsObject] must beSome(actionPayload)
+//      (postBody \ "context" \ "org" \ "name").asOpt[String] must beSome("root")
+//      (postBody \ "resource" \ "id").asOpt[UUID] must beSome(dummyResource.id)
+//
+//      response must beLeft[GestaltResourceInstance](
+//        ((_: GestaltResourceInstance).properties.get) ^^ havePairs(
+//          "foo" -> "new-bar"
+//        )
+//      )
+//    }
+//
+//    "use authentication header if configured" in new TestScope {
+//      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+//
+//      val testHeader = "Bearer some-magic-token"
+//      val routeInvoke = Route {
+//        case (POST, testUrl) => Action(parse.json) { request =>
+//          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
+//            val resource = (request.body \ "resource").as[JsObject]
+//            Ok(resource)
+//          }
+//          else Unauthorized("")
+//        }
+//      }
+//      val ws = MockWS(routeInvoke)
+//      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST", authHeader = Some(testHeader))
+//
+//      val inv = GenericActionInvocation(
+//        action = "noun.verb",
+//        metaAddress = "http://example.com",
+//        context = GenericActionContext(
+//          org = rootOrg,
+//          workspace = None,
+//          environment = None
+//        ),
+//        provider = providerWithDefaultEndpoint,
+//        resource = Some(dummyResource)
+//      )
+//
+//      await(httpProvider.invokeAction(inv)) must beLeft[GestaltResourceInstance]
+//    }
+//
+//    "abide by provider 'method'" in new TestScope {
+//      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+//
+//      val testHeader = "Bearer some-magic-token"
+//      val routeInvoke = Route {
+//        case (GET, testUrl) => Action { request =>
+//          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
+//            Ok("got")
+//          }
+//          else Unauthorized("")
+//        }
+//      }
+//      val ws = MockWS(routeInvoke)
+//      val httpProvider = new HttpGenericProvider(ws, testUrl, "GET", authHeader = Some(testHeader))
+//
+//      val inv = GenericActionInvocation(
+//        action = "noun.verb",
+//        metaAddress = "http://example.com",
+//        context = GenericActionContext(
+//          org = rootOrg,
+//          workspace = None,
+//          environment = None
+//        ),
+//        provider = providerWithDefaultEndpoint,
+//        resource = Some(dummyResource)
+//      )
+//
+//      await(httpProvider.invokeAction(inv)) must beRight(RawInvocationResponse(
+//        Some(200), Some("text/plain; charset=utf-8"), Some("got")
+//      ))
+//    }
+//
+//    "expand url template" in new TestScope {
+//      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+//
+//      val templateUrl = "http://<provider.properties.config.env.public.SERVICE_HOST>:<provider.properties.config.env.public.SERVICE_PORT>/streams/<resource.id>/status"
+//
+//      val testHeader = "Bearer some-magic-token"
+//      val routeInvoke = Route {
+//        case (GET, url) if url == s"http://some-laser.some-domain:9000/streams/${dummyResource.id}/status" => Action { request =>
+//          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
+//            Ok("got")
+//          }
+//          else Unauthorized("")
+//        }
+//      }
+//      val ws = MockWS(routeInvoke)
+//      val httpProvider = new HttpGenericProvider(ws, templateUrl, "GET", authHeader = Some(testHeader))
+//
+//      val inv = GenericActionInvocation(
+//        action = "noun.verb",
+//        metaAddress = "http://example.com",
+//        context = GenericActionContext(
+//          org = rootOrg,
+//          workspace = None,
+//          environment = None
+//        ),
+//        provider = providerWithDefaultEndpoint,
+//        resource = Some(dummyResource)
+//      )
+//
+//      await(httpProvider.invokeAction(inv)) must beRight(RawInvocationResponse(
+//        Some(200), Some("text/plain; charset=utf-8"), Some("got")
+//      ))
+//    }
+//
+//    "expand url template (query params)" in new TestScope {
+//      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+//
+//      val templateUrl = "http://host/resources/<queryParams.p1>"
+//
+//      val testHeader = "Bearer some-magic-token"
+//      val routeInvoke = Route {
+//        case (GET, url) if url == s"http://host/resources/v1" => Action { request =>
+//          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
+//            Ok("got")
+//          }
+//          else Unauthorized("")
+//        }
+//      }
+//      val ws = MockWS(routeInvoke)
+//      val httpProvider = new HttpGenericProvider(ws, templateUrl, "GET", authHeader = Some(testHeader))
+//
+//      val inv = GenericActionInvocation(
+//        action = "noun.verb",
+//        metaAddress = "http://example.com",
+//        context = GenericActionContext(
+//          org = rootOrg,
+//          workspace = None,
+//          environment = None
+//        ),
+//        provider = providerWithDefaultEndpoint,
+//        resource = Some(dummyResource),
+//        queryParams = Map(
+//          "p1" -> Seq("v1","v1.2"),
+//          "p2" -> Seq("v2")
+//        )
+//      )
+//
+//      await(httpProvider.invokeAction(inv)) must beRight(RawInvocationResponse(
+//        Some(200), Some("text/plain; charset=utf-8"), Some("got")
+//      ))
+//    }
+//
+//    "40x errors from endpoints should result in BadRequestException" in new TestScope {
+//      var status: Int = 398
+//      val routeInvoke = Route {
+//        case _ => Action(parse.json) { request =>
+//          status = status + 1
+//          new Status(status)
+//        }
+//      }
+//      val ws = MockWS(routeInvoke)
+//      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
+//
+//      val inv = GenericActionInvocation(
+//        action = "noun.verb",
+//        metaAddress = "http://example.com",
+//        context = GenericActionContext(
+//          org = rootOrg,
+//          workspace = None,
+//          environment = None
+//        ),
+//        provider = providerWithDefaultEndpoint
+//      )
+//
+//      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("399")
+//      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("400")
+//      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("401")
+//      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("402")
+//      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("403")
+//    }
+//
+//    "parse custom-response semantics from endpoints " in new TestScope {
+//      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+//      val actionPayload = Json.obj(
+//        "foo" -> "bar"
+//      )
+//
+//      var postBody: JsValue = null
+//      val customResponse = Json.obj(
+//        "custom" -> "response"
+//      )
+//      val routeInvoke = Route {
+//        case (POST, testUrl) => Action(parse.json) { request =>
+//          postBody = request.body
+//          Ok(customResponse)
+//        }
+//      }
+//      val ws = MockWS(routeInvoke)
+//      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
+//
+//      val inv = GenericActionInvocation(
+//        action = "noun.verb",
+//        metaAddress = "http://example.com",
+//        context = GenericActionContext(
+//          org = rootOrg,
+//          workspace = None,
+//          environment = None
+//        ),
+//        provider = providerWithDefaultEndpoint,
+//        resource = Some(dummyResource),
+//        actionPayload = Some(actionPayload)
+//      )
+//
+//      val response = await(httpProvider.invokeAction(inv))
+//
+//      routeInvoke.timeCalled must_== 1
+//
+//      response must beRight(RawInvocationResponse(
+//        Some(200), Some("application/json"), Some(customResponse.toString)
+//      ))
+//    }
+//
+//    "parse failure semantics" in new TestScope {
+//      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+//      val failureMessage = "some failure message"
+//      val customResponse = Json.obj(
+//        "actionFailed" -> failureMessage
+//      )
+//      val routeInvoke = Route {
+//        case (POST, testUrl) => Action(parse.json) { response => Ok(customResponse) }
+//      }
+//      val ws = MockWS(routeInvoke)
+//      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
+//
+//      val inv = GenericActionInvocation(
+//        action = "noun.verb",
+//        metaAddress = "http://example.com",
+//        context = GenericActionContext(
+//          org = rootOrg,
+//          workspace = None,
+//          environment = None
+//        ),
+//        provider = providerWithDefaultEndpoint,
+//        resource = Some(dummyResource),
+//        actionPayload = Some(Json.obj(
+//          "foo" -> "bar"
+//        ))
+//      )
+//
+//      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException](failureMessage)
+//    }
+//
+//  }
 
   import com.galacticfog.gestalt.data.TypeFactory
   import com.galacticfog.gestalt.data.bootstrap.SystemType
   
-  //lookupProvider(payload: JsValue, resourceType: UUID, providerType: UUID)
   "lookupProvider" should {
     
     "succeed when given good information" in {

@@ -24,6 +24,7 @@ import play.api.libs.json.Json
 
 import java.util.UUID
 
+import scala.util.{Failure,Success,Try}
 
 object OutputDatatypeHandlers {
 
@@ -35,7 +36,38 @@ object OutputDatatypeHandlers {
   def renderInt       (property: GestaltTypeProperty, value: String) = JsNumber(value.toInt)
   def renderBoolean   (property: GestaltTypeProperty, value: String) = JsBoolean(value.toBoolean)
   def renderJson      (property: GestaltTypeProperty, value: String) = {
-    Json.parse( value )
+    Try(Json.parse(value)) match {
+      case Success(p) => p
+      case Failure(e) => {
+        
+        
+//        throw e
+//        if (property.name != "parent") throw(e)
+//        else renderDefault(value)
+        
+        import com.galacticfog.gestalt.data.parseUUID
+        
+        if (property.name != "parent") throw e
+        else {
+          println(s"Error parsing 'parent' property. Attempting to transform to JSON link.")
+          parseUUID(value) match {
+            case None => 
+              throw new RuntimeException(s"Unable to parse '${property.name}' property: ${e.getMessage}")
+            case Some(id) => {
+              // Map ID to a Link JSON
+              ResourceFactory.findById(UUID.fromString(id)) match {
+                case None => 
+                  throw new RuntimeException(s"Cannot find parent resource with ID '${id}'")
+                case Some(res) => {
+                  Json.toJson(toLink(res, None))
+                }
+              }
+            }
+          }
+        }
+        
+      }
+    }
   }
   def renderUUID      (property: GestaltTypeProperty, value: String) = JsString(value)
   def renderDateTime  (property: GestaltTypeProperty, value: String) = JsString {

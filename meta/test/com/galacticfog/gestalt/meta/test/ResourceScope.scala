@@ -196,6 +196,21 @@ trait ResourceScope extends Scope with Mockito {
       "lambda" -> lambda.get.id)
   }
   
+  import com.galacticfog.gestalt.meta.genericactions._
+  import play.api.libs.json.JsValue
+  
+  def newActionInvocation(
+     action: String = "foo.bar",
+     metaAddress: String = null,
+     context: GenericActionContext = null,
+     provider: GestaltResourceInstance = null,
+     resource: Option[GestaltResourceInstance] = None,
+     actionPayload: Option[JsValue] = None,
+     requestUrl: Option[String] = None,
+     queryParams: Map[String, Seq[String]] = Map.empty) = GenericActionInvocation(
+         action, metaAddress, context, provider, resource, actionPayload, requestUrl, queryParams)  
+  
+  
   def newDummyGateway(env: UUID, name: String = uuid()) = {
     createInstance(ResourceIds.GatewayManager, 
         name,

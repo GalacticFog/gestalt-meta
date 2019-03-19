@@ -1,14 +1,21 @@
 package com.galacticfog.gestalt.meta.genericactions
 
+import java.util.UUID
 import org.specs2.mutable._
 import play.api.libs.json._
 
 import com.galacticfog.gestalt.json.Js
 import scala.util.Try
 
-class GestaltFunctionConfigSpec extends Specification {
+import com.galacticfog.gestalt.data.bootstrap.SystemType
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.test._
+import com.galacticfog.gestalt.data._
 
-  val rawConfig = """
+class GestaltFunctionConfigSpec extends Specification with MetaRepositoryOps {
+
+  val implementation1 = "2ce110c7-b197-4bc6-adf8-69f188b8c22e"
+  val rawConfig = s"""
   {
     "config": {
       "gitAddress": "http://...",
@@ -17,6 +24,10 @@ class GestaltFunctionConfigSpec extends Specification {
           "kind": "http",
           "url": "http://example.com",
           "authentication": "Basic Zm9vYmFyMTp3aG9jYW5pdGJlbm93",
+          "implementation": {
+            "kind": "lambda",
+            "id": "${implementation1}"
+          },
           "actions": [
             {
               "name": "foo.bar",
@@ -46,7 +57,7 @@ class GestaltFunctionConfigSpec extends Specification {
                 "query_parameters": [
                   {
                     "name": "resource_id",
-                    "value": "${RESOURCE_ID}"
+                    "value": ""
                   }
                 ],    
                 "responses": [
@@ -284,19 +295,130 @@ class GestaltFunctionConfigSpec extends Specification {
   
   
   
-//  "getFunctionConfig" should {
-//    
-//    "extract a GestaltFunctionConfig from a Provider instance if present" >> {
-//      
-//      failure
-//    }
-//    
-//    "return nothing if there is no function config present" >> {
-//      
-//      failure
-//    }
-//  }
+  "getFunctionConfig" should {
+    
+    "extract a GestaltFunctionConfig from a Provider instance if present" >> {
+      val raw = Json.parse(rawConfig)
+      
+      val typeId = uuid
+      val typeName = uuid.toString
+      
+      SystemType(
+          dummyRootOrgId, dummyOwner,
+          typeId   = typeId,
+          typeName = typeName,
+          extend = Some(ResourceIds.Provider)
+      ).save()      
+      
+      val config = Json.stringify((raw \ "config").get)
+      val test = createInstance(typeId, uuid.toString, 
+          properties = Some(Map("config" -> config)))
+      
+      test must beSuccessfulTry
+      test.get.typeId === typeId
+      
+      val fc = getFunctionConfig(test.get)
+      fc must beSuccessfulTry
+      
+      fc.get.endpoints.size === 2
+      fc.get.endpoints(0).actions.size === 1
+      fc.get.endpoints(1).actions.size ==== 6
+    }
+    
+    "throw an exception if it fails to parse a configuration" >> {
+      val (_, eid) = createWorkspaceEnvironment()
+      val env = ResourceFactory.findById(eid)
+      env must beSome
+      getFunctionConfig(env.get) must beFailedTry
+    }
+  }
   
+  "getImplementationByActionName" should {
+    
+    "get the implementation for the given action" >> {
+      val raw = Json.parse(rawConfig)
+      
+      val typeId = uuid
+      val typeName = uuid.toString
+      
+      SystemType(
+          dummyRootOrgId, dummyOwner,
+          typeId   = typeId,
+          typeName = typeName,
+          extend = Some(ResourceIds.Provider)
+      ).save()      
+      
+      val config = Json.stringify((raw \ "config").get)
+      val test = createInstance(typeId, uuid.toString, 
+          properties = Some(Map("config" -> config)))
+      
+      test must beSuccessfulTry
+      test.get.typeId === typeId
+      
+      val fc = getFunctionConfig(test.get)
+      fc must beSuccessfulTry
+      
+      val impl = fc.get.getImplementationByActionName("foo.bar")
+      impl must beSome
+      
+      impl.get.kind === "lambda"
+      impl.get.id === UUID.fromString(implementation1)
+    }
+    
+    "return None if there is no matching action" >> {
+      val raw = Json.parse(rawConfig)
+      
+      val typeId = uuid
+      val typeName = uuid.toString
+      
+      SystemType(
+          dummyRootOrgId, dummyOwner,
+          typeId   = typeId,
+          typeName = typeName,
+          extend = Some(ResourceIds.Provider)
+      ).save()      
+      
+      val config = Json.stringify((raw \ "config").get)
+      val test = createInstance(typeId, uuid.toString, 
+          properties = Some(Map("config" -> config)))
+      
+      test must beSuccessfulTry
+      test.get.typeId === typeId
+      
+      val fc = getFunctionConfig(test.get)
+      fc must beSuccessfulTry
+      
+      val impl = fc.get.getImplementationByActionName("bar.baz")
+      impl must beNone      
+    }
+    
+    "return None if the action has no implementation" >> {
+      val raw = Json.parse(rawConfig)
+      
+      val typeId = uuid
+      val typeName = uuid.toString
+      
+      SystemType(
+          dummyRootOrgId, dummyOwner,
+          typeId   = typeId,
+          typeName = typeName,
+          extend = Some(ResourceIds.Provider)
+      ).save()      
+      
+      val config = Json.stringify((raw \ "config").get)
+      val test = createInstance(typeId, uuid.toString, 
+          properties = Some(Map("config" -> config)))
+      
+      test must beSuccessfulTry
+      test.get.typeId === typeId
+      
+      val fc = getFunctionConfig(test.get)
+      fc must beSuccessfulTry
+      
+      val impl = fc.get.getImplementationByActionName("streamspec.update")
+      impl must beNone      
+    }    
+  }
   
   
 }
