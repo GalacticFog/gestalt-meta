@@ -3453,7 +3453,8 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           service_port = Some(30001),
           name = Some("add-port"),
           expose_endpoint = Some(true),
-          virtual_hosts = Some(Seq("port8444.test.com"))
+          virtual_hosts = Some(Seq("port8444.test.com")),
+          ingress_global_static_ip_name = Some("test")
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
@@ -3489,6 +3490,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           and haveName(metaContainer.name)
           and (((_: skuber.ext.Ingress).spec.get.rules.map(_.host)) ^^ containTheSameElementsAs(Seq("port81.test.com","port8444.test.com")))
           and (((_: skuber.ext.Ingress).spec.get.rules.flatMap(_.http.paths).map(_.backend.serviceName).distinct) ^^ containTheSameElementsAs(Seq(s"${metaContainer.name}-ext")))
+          and (((_: skuber.ext.Ingress).metadata.annotations) ^^ be_==(Map("kubernetes.io/ingress.global-static-ip-name" -> "test")))
       ))(any,meq(Ingress.ingDef),any)
       there was one(testSetup.client).update(argThat(
         inNamespace(testSetup.testNS.name)

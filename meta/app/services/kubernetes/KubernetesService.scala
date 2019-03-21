@@ -1003,8 +1003,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   private def buildDeploymentSpecs(context: ProviderContext, metaResource: GestaltResourceInstance, specProperties: ContainerSpec): EitherError[DeploymentSpecs] = {
     import KubernetesProviderProperties.Implicits._
-    import cats.instances.list._
-    import cats.instances.option._
 
     for(
       providerResource <- eitherFrom[Error.NotFound].option(ResourceFactory.findById(context.providerId), s"Provider not found: ${context.providerId}");
@@ -1051,18 +1049,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         )
       }
       val mkIngress = { spec: skuber.ext.Ingress.Spec =>
-        val r = specProperties.port_mappings.toList.traverse { pm =>
-          if(pm.ingress_global_static_ip_name == Some("")) {
-            None
-          }else {
-            pm.ingress_global_static_ip_name
-          }
-        }
+        val r = (specProperties.port_mappings.collect {
+          case pm if pm.ingress_global_static_ip_name.getOrElse("") != "" => pm.ingress_global_static_ip_name.getOrElse("")
+        }).headOption
         val annotations = (for(
-          r0 <- r;
-          r1 <- r0.headOption
+          r0 <- r
         ) yield {
-          Map("kubernetes.io/ingress.global-static-ip-name" -> r1)
+          Map("kubernetes.io/ingress.global-static-ip-name" -> r0)
         }).getOrElse(Map())
 
         skuber.ext.Ingress(
