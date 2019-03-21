@@ -157,7 +157,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
             .mode(EndpointSpec.Mode.RESOLUTION_MODE_VIP)
             .ports(
               containerSpec.port_mappings.collect({
-                case PortMapping(protocol, Some(containerPort), _, maybeServicePort, Some(portName), _, Some(true), _, _, _, _, _, _) =>
+                case PortMapping(protocol, Some(containerPort), _, maybeServicePort, Some(portName), _, Some(true), _, _, _, _, _, _, _, _) =>
                   PortConfig.builder()
                     .name(portName)
                     .protocol(protocol)
@@ -187,7 +187,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
       config <- Future.fromTry(mkServiceSpec(containerId, externalId, spec, providerId, fqon, workspaceId, environmentId))
       response <- Future{docker.createService(config)}
       newPortMappings = spec.port_mappings map {
-        case pm @ PortMapping(proto, Some(cp), _, _, _, _, Some(true), _, maybeVHosts, _, _, _, _) =>
+        case pm @ PortMapping(proto, Some(cp), _, _, _, _, Some(true), _, maybeVHosts, _, _, _, _, _, _) =>
           pm.copy(service_address = Some(ServiceAddress(
             host = externalId,
             port = cp,
