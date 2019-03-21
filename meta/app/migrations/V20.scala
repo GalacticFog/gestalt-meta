@@ -38,13 +38,25 @@ class V20() extends MetaMigration with AuthorizationMethods {
         acc push s"Looking up creator '${identity}'"
         ResourceFactory.findById(ResourceIds.User, identity).getOrElse(throw new RuntimeException(s"Could not locate creator '${identity}'"))
       }
+      
+      /*
+       * TODO: Here we're deriving aws_lambda_provider from lambda_provider, which is technically 
+       * incorrect, but should have no meaningful impact on the system in the short term, and solves
+       * the issue doumented in https://gitlab.com/galacticfog/gestalt-meta/issues/642. That's the
+       * immediate issue that needs to be solved. When we have the time and the testing manpower we
+       * can solve this the correct way, which is to define an abstract base lambda_provider type, and 
+       * derive concrete Laser and AWS types from that. That change will require changes in the UI, the
+       * CLI, and the Installer simultaneously.
+       */
+      
       awsLambdaTpe <- createResourceType(
         creator, AWS_LAMBDA_PROVIDER_TYPE_ID, AWS_LAMBDA_PROVIDER_TYPE_NAME,
         SystemType(root.id, ResourceOwnerLink(ResourceIds.User, creator.id),
           typeId = AWS_LAMBDA_PROVIDER_TYPE_ID,
           typeName = AWS_LAMBDA_PROVIDER_TYPE_NAME,
           desc = Some("AWS Lambda Provider"),
-          extend = Some(ResourceIds.Provider),
+          //extend = Some(ResourceIds.Provider),
+          extend = Some(ResourceIds.LambdaProvider),
           selfProps = schemaProps(awsLambdaProviderSchema)
         ).withTypeProperties(
         ).withActionInfo(ActionInfo(

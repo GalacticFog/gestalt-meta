@@ -687,17 +687,29 @@ class ResourceController @Inject()(
 
   private[controllers] def providerTypeVariance(typeName: String): Variance[UUID] = {
     val typeid = ResourceType.id(typeName)
+    log.debug(s"Testing for provider variance on type '$typeName'")
+    
+    /*
+     * TODO: This is an incomplete list of abstract provider types. There's
+     * a fix coming soon that will allow for selecting abstract providers directly.
+     */
     val abstractProviders = Seq(
         ResourceIds.CaasProvider,
         ResourceIds.DataProvider,
         ResourceIds.MessageProvider,
-        ResourceIds.ExecutorProvider)
-    if (abstractProviders.contains(typeid)) CoVariant(typeid)
-    else Invariant(typeid)
+        ResourceIds.ExecutorProvider,
+        ResourceIds.LambdaProvider)
+    if (abstractProviders.contains(typeid)) {
+      log.debug("Covariant query...")
+      CoVariant(typeid)
+    }
+    else {
+      log.debug("Invariant query...")
+      Invariant(typeid)
+    }
   }
 
   def filterProvidersByType(rs: List[GestaltResourceInstance], qs: QueryString) = {
-
     val allnames = TypeFactory.allProviderNames()
     val prefixes = TypeFactory.typeNamePrefixes(allnames)
 
@@ -711,8 +723,8 @@ class ResourceController @Inject()(
         val variance = providerTypeVariance(typename)
         findTypesWithVariance(variance) map { _.id }
       }
-      rs filter { r =>
-        ids.contains(r.typeId) }
+      log.debug("Matching IDs : " + ids)
+      rs filter(r => ids.contains(r.typeId))
     }
   }
 
@@ -781,7 +793,7 @@ class ResourceController @Inject()(
         )
     }
   }
-
+  
   private[controllers] def embedProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString]) = {
     val renderedRes = {
       for {
