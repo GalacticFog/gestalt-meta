@@ -81,6 +81,17 @@ class AWSGatewayManagerProviderSpec extends PlaySpecification with GestaltSecuri
           |}""".stripMargin
     )))
     val Success(testGatewayProvider) = createInstance(migrations.V24.AWS_API_GATEWAY_PROVIDER_TYPE_ID, "test-gateway-provider", properties = Some(Map(
+      "config" -> Json.obj(
+        "env" -> Json.obj(
+          "public" -> Json.obj(
+            "AWS_APIGATEWAY_LOGLEVEL" -> "INFO",
+            "AWS_APIGATEWAY_LOGREQUESTRESPONSE" -> "TRUE",
+            "AWS_APIGATEWAY_ACCESSLOGGROUP" -> "test arn",
+            "AWS_APIGATEWAY_ACCESSLOGFORMAT" -> "sample format"
+          ),
+          "private" -> Json.obj()
+        )
+      ).toString,
       "linked_providers" -> Json.arr(Json.obj(
         "name" -> "AWS",
         "type" -> "",
@@ -148,6 +159,14 @@ class AWSGatewayManagerProviderSpec extends PlaySpecification with GestaltSecuri
         "name" -> s"${testEndpoint.id}",
         "aws" -> Json.obj(
           "functionArn" -> "function id"
+        ),
+        "errorLog" -> Json.obj(
+          "level" -> "INFO",
+          "logRequestResponseData" -> true
+        ),
+        "accessLog" -> Json.obj(
+          "group" -> "test arn",
+          "format" -> "sample format"
         )
       ))
     }
