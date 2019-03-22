@@ -1049,13 +1049,23 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         )
       }
       val mkIngress = { spec: skuber.ext.Ingress.Spec =>
+        val r = (specProperties.port_mappings.collect {
+          case pm if pm.ingress_global_static_ip_name.getOrElse("") != "" => pm.ingress_global_static_ip_name.getOrElse("")
+        }).headOption
+        val annotations = (for(
+          r0 <- r
+        ) yield {
+          Map("kubernetes.io/ingress.global-static-ip-name" -> r0)
+        }).getOrElse(Map())
+
         skuber.ext.Ingress(
           metadata = skuber.ObjectMeta(
             name = specProperties.name,
             namespace = "",
             labels = Map(
               KubernetesConstants.META_CONTAINER_KEY -> s"${metaResource.id}"
-            ) ++ mkLabels(context)
+            ) ++ mkLabels(context),
+            annotations = annotations
           ),
           spec = Some(spec)
         )

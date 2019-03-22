@@ -92,7 +92,9 @@ case object ContainerSpec extends Spec {
                          lb_port: Option[Int] = None,
                          `type`: Option[String] = None,
                          lb_address: Option[ServiceAddress] = None,
-                         lb_ip: Option[String] = None     // only for kubernetes, only one per ContainerSpec
+                         lb_ip: Option[String] = None,     // only for kubernetes, only one per ContainerSpec
+                         ingress_global_static_ip_name: Option[String] = None,     // https://cloud.google.com/kubernetes-engine/docs/tutorials/configuring-domain-name-static-ip#step_2b_using_an_ingress
+                         disable_ingress: Option[Boolean] = None
                        )
 
   sealed trait VolumeMountSpec {
@@ -228,7 +230,9 @@ case object ContainerSpec extends Spec {
       (__ \ "lb_port").readNullable[Int](max(65535) andKeep min(0)) and
       (__ \ "type").readNullable[String](verifying(Set("internal","external","loadBalancer").contains(_))) and
       (__ \ "lb_address").readNullable[ServiceAddress] and
-      (__ \ "lb_ip").readNullable[String]
+      (__ \ "lb_ip").readNullable[String] and
+      (__ \ "ingress_global_static_ip_name").readNullable[String] and
+      (__ \ "disable_ingress").readNullable[Boolean]
     )(ContainerSpec.PortMapping.apply _)
 
   implicit val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]

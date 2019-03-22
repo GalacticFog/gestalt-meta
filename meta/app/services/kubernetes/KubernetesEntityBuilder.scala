@@ -376,7 +376,7 @@ trait KubernetesEntityBuilder {
 
   def mkIngressSpec(providerProperties: KubernetesProviderProperties.Properties, specProperties: ContainerSpec): EitherError[Option[skuber.ext.Ingress.Spec]] = {
     val ingressRules = for(
-      pm <- specProperties.port_mappings.toList if pm.expose_endpoint == Some(true);
+      pm <- specProperties.port_mappings.toList if (pm.expose_endpoint == Some(true)) && (pm.`type` != Some("internal")) && (pm.disable_ingress != Some(true));
       vhost <- pm.virtual_hosts.getOrElse(Seq.empty);
       port <- pm.lb_port.orElse(pm.container_port)
     ) yield {
