@@ -36,7 +36,10 @@ class V30  extends MetaMigration {
           b <- {
             setUserPermissions(identity)
           }
-        } yield b
+          c <- {
+            idempotentAddPropertyToType(USERPROFILE_TYPE_ID, "avatar", DataType.id("string"), RequirementType.id("optional"))            
+          }
+        } yield c
         
         handleResultStatus(process)(acc)
     }
@@ -84,6 +87,7 @@ class V30  extends MetaMigration {
         desc = Some("Store personal user settings and preferences."),
         extend = Some(ResourceIds.Provider)
       ).withTypeProperties(
+        TypeProperty("avatar", "string", require = "optional"),  
         TypeProperty("resource_favorites", "json::list", require = "optional")
       ).withActionInfo(ActionInfo(
         prefix = "userprofile",
@@ -101,3 +105,7 @@ object V30 {
   val USERPROFILE_TYPE_ID = UUID.fromString("b9e3c356-b6d8-4561-a20a-398b5cd8d62d")
   val USERPROFILE_TYPE_NAME = "Gestalt::Resource::UserProfile"
 }
+
+
+
+
